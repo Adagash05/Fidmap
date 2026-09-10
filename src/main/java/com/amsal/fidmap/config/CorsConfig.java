@@ -18,7 +18,7 @@ public class CorsConfig {
         CorsConfiguration config = new CorsConfiguration();
         //IT MUST COME BACK AS A HEADER
 
-        config.setAllowedOrigins(List.of("http://localhost:5173","http://localhost:5174")); // use patterns, not "*","http://localhost:5173","http://localhost:5174"
+        config.setAllowedOrigins(List.of("http://localhost:5173","http://localhost:5174","https://app.fidmap.co")); // use patterns, not "*","http://localhost:5173","http://localhost:5174"
         config.setAllowedMethods(List.of(
                 "GET",
                 "POST",
