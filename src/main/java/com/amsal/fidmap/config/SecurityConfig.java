@@ -37,6 +37,7 @@ public class SecurityConfig {
             "/oauth2/**",
             "/login/**",
             "/api/public/**",
+
             "/v3/api-docs/**",
             "/", "/home", "/index",
             "/webjars/**",
@@ -52,10 +53,14 @@ public class SecurityConfig {
             "/workspace/slug/**",
             "/vote/**",
 
-            "/api/webhooks/paddle/**",
+            "/api/webhooks/polar/**",
             "/api/auth/forgot-password",
             "/api/auth/reset-password",
 
+
+            "/api/billing/**",
+            "/billing/success/**",
+            "/billing/**",
 //            "/auth/**",
 //            "/board/**",
 //            "/comment/**",

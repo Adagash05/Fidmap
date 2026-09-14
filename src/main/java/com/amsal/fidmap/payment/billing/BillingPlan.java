@@ -14,10 +14,19 @@ public enum BillingPlan {
     private final String displayName;
     private final String billingInterval;
 
-    BillingPlan(String displayName, String billingInterval) {
+    BillingPlan(
+            String displayName,
+            String billingInterval
+    ) {
         this.displayName = displayName;
         this.billingInterval = billingInterval;
     }
 
+    public boolean isRecurring() {
+        return this != LIFETIME;
+    }
 
+    public boolean isLifetime() {
+        return this == LIFETIME;
+    }
 }

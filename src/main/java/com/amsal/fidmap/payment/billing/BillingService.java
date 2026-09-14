@@ -1,7 +1,8 @@
 package com.amsal.fidmap.payment.billing;
 
-import com.amsal.fidmap.payment.paddle.PaddleConfig;
-import com.amsal.fidmap.payment.paddle.PaddleService;
+import com.amsal.fidmap.config.FidmapConfig;
+import com.amsal.fidmap.payment.polar.PolarConfig;
+import com.amsal.fidmap.payment.polar.PolarService;
 import com.amsal.fidmap.payment.subscription.Subscription;
 import com.amsal.fidmap.payment.subscription.SubscriptionRepository;
 import com.amsal.fidmap.payment.subscription.SubscriptionResponse;
@@ -22,131 +23,162 @@ public class BillingService {
     private static final int TRIAL_DAYS = 7;
 
     private final SubscriptionRepository subscriptionRepository;
-    private final PaddleConfig paddleConfig;
-    private final PaddleService paddleService;
+    private final PolarConfig polarConfig;
+    private final PolarService polarService;
     private final WorkspaceAuthorizationService workspaceAuthorizationService;
     private final PlanEntitlementService planEntitlementService;
+    private final FidmapConfig fidmapConfig;
 
     /**
-     * Creates the initial 7-day free trial for a workspace.
-     * <p>
+     * Creates the initial 7-day FIDMAP trial.
+     *
      * The trial is completely local.
-     * <p>
-     * No Paddle customer.
-     * No Paddle subscription.
+     *
+     * No Polar customer.
+     * No Polar subscription.
      * No payment method.
-     * No checkout.
+     * No Polar checkout.
      */
     @Transactional
     public Subscription startTrial(UUID workspaceId) {
 
-        if (workspaceId == null) {
-            throw new IllegalArgumentException("Workspace ID is required");
-        }
+        requireWorkspaceId(workspaceId);
 
         if (subscriptionRepository.findByWorkspaceId(workspaceId).isPresent()) {
 
-            throw new IllegalStateException("Workspace already has a billing subscription");
+            throw new IllegalStateException(
+                    "Workspace already has a billing subscription"
+            );
         }
 
         Instant now = Instant.now();
 
-        Instant trialEndsAt = now.plus(TRIAL_DAYS, ChronoUnit.DAYS);
+        Instant trialEndsAt =
+                now.plus(
+                        TRIAL_DAYS,
+                        ChronoUnit.DAYS
+                );
 
-        Subscription subscription = Subscription.builder()
-                .workspaceId(workspaceId)
-                .plan(BillingPlan.STARTUP_MONTHLY)
-                .status(SubscriptionStatus.TRIALING)
-                .trialStartsAt(now)
-                .trialEndsAt(trialEndsAt)
-                .cancelAtPeriodEnd(false)
-                .build();
+        Subscription subscription =
+                Subscription.builder()
+                        .workspaceId(workspaceId)
+                        .plan(BillingPlan.STARTUP_MONTHLY)
+                        .status(SubscriptionStatus.TRIALING)
+                        .trialStartsAt(now)
+                        .trialEndsAt(trialEndsAt)
+                        .cancelAtPeriodEnd(false)
+                        .build();
 
-        return subscriptionRepository.save(
-                subscription
-        );
+        return subscriptionRepository.save(subscription);
     }
 
     /**
-     * Creates the information required by the frontend
-     * to open Paddle Checkout.
-     * <p>
-     * Paddle Checkout itself is opened by the frontend
-     * using Paddle.js.
+     * Creates a Polar hosted checkout session.
+     *
+     * The local subscription is NOT activated here.
+     *
+     * Polar webhook events are the source of truth for
+     * successful payment and subscription activation.
      */
     public CheckoutResponse createCheckout(
             UUID workspaceId,
             BillingPlan plan
     ) {
 
-        if (workspaceId == null) {
-            throw new IllegalArgumentException("Workspace ID is required");
-        }
+        requireWorkspaceId(workspaceId);
 
         if (plan == null) {
-            throw new IllegalArgumentException("Billing plan is required");
+
+            throw new IllegalArgumentException(
+                    "Billing plan is required"
+            );
         }
 
-        workspaceAuthorizationService.requireBillingAccess(workspaceId);
+        workspaceAuthorizationService.requireBillingAccess(
+                workspaceId
+        );
 
         /*
-         * A workspace should never purchase a "trial"
-         * through Paddle.
+         * The FIDMAP free trial is handled locally.
          *
-         * Trial is represented locally as:
-         *
-         * STARTUP + TRIALING
+         * If the frontend calls this endpoint, it creates
+         * a paid Polar checkout for the selected product.
          */
-        String priceId = getPriceId(plan);
+        String productId =
+                getProductId(plan);
 
-        if (priceId == null || priceId.isBlank()) {
+        if (productId == null || productId.isBlank()) {
 
             throw new IllegalStateException(
-                    "Paddle price ID is not configured for plan: " + plan);
+                    "Polar product ID is not configured for plan: "
+                            + plan
+            );
         }
 
-        String environment = paddleConfig
-                        .getApiUrl()
-                        .contains("sandbox")
-                        ? "sandbox"
-                        : "production";
+        String frontendUrl =
+                fidmapConfig.getFrontendUrl();
+
+        if (frontendUrl == null || frontendUrl.isBlank()) {
+
+            throw new IllegalStateException(
+                    "FIDMAP frontend URL is not configured"
+            );
+        }
+
+        String successUrl =
+                frontendUrl + "/billing/success";
+
+        String returnUrl =
+                frontendUrl + "/settings/billing";
+
+        PolarService.PolarCheckoutResult checkout =
+                polarService.createCheckout(
+                        workspaceId,
+                        productId,
+                        successUrl,
+                        returnUrl,
+                        frontendUrl
+                );
 
         return new CheckoutResponse(
                 workspaceId,
                 plan,
-                priceId,
-                paddleConfig.getClientToken(),
-                environment
+                checkout.checkoutId().toString(),
+                checkout.checkoutUrl()
         );
     }
 
     /**
-     * Returns the configured Paddle price ID
-     * for the selected billing plan.
+     * Resolves a FIDMAP billing plan to its Polar product ID.
      */
-    private String getPriceId(BillingPlan plan) {
+    private String getProductId(BillingPlan plan) {
 
         return switch (plan) {
 
-            case STARTUP_MONTHLY -> paddleConfig
-                    .getPrices()
-                    .getStartupMonthly();
+            case STARTUP_MONTHLY ->
+                    polarConfig
+                            .getProducts()
+                            .getStartupMonthly();
 
-            case STARTUP_YEARLY -> paddleConfig
-                    .getPrices()
-                    .getStartupYearly();
+            case STARTUP_YEARLY ->
+                    polarConfig
+                            .getProducts()
+                            .getStartupYearly();
 
-            case BUSINESS_MONTHLY -> paddleConfig
-                    .getPrices()
-                    .getBusinessMonthly();
+            case BUSINESS_MONTHLY ->
+                    polarConfig
+                            .getProducts()
+                            .getBusinessMonthly();
 
-            case BUSINESS_YEARLY -> paddleConfig
-                    .getPrices()
-                    .getBusinessYearly();
+            case BUSINESS_YEARLY ->
+                    polarConfig
+                            .getProducts()
+                            .getBusinessYearly();
 
-            case LIFETIME -> paddleConfig
-                    .getPrices()
-                    .getLifetime();
+            case LIFETIME ->
+                    polarConfig
+                            .getProducts()
+                            .getLifetime();
         };
     }
 
@@ -154,21 +186,36 @@ public class BillingService {
      * Returns the current billing state of a workspace.
      */
     @Transactional
-    public SubscriptionResponse getSubscription(UUID workspaceId) {
+    public SubscriptionResponse getSubscription(
+            UUID workspaceId
+    ) {
 
-        workspaceAuthorizationService.requireBillingAccess(workspaceId);
+        workspaceAuthorizationService.requireBillingAccess(
+                workspaceId
+        );
 
-        Subscription subscription = subscriptionRepository.findByWorkspaceId(workspaceId)
-                        .orElseThrow(() -> new IllegalStateException("Billing subscription not found"));
+        Subscription subscription =
+                subscriptionRepository
+                        .findByWorkspaceId(workspaceId)
+                        .orElseThrow(() ->
+                                new IllegalStateException(
+                                        "Billing subscription not found"
+                                )
+                        );
 
         /*
-         * Automatically expire an ended trial.
+         * Automatically expire an ended local trial.
          */
-        if (subscription.getStatus() == SubscriptionStatus.TRIALING
+        if (subscription.getStatus()
+                == SubscriptionStatus.TRIALING
                 && subscription.getTrialEndsAt() != null
-                && !Instant.now().isBefore(subscription.getTrialEndsAt())) {
+                && !Instant.now().isBefore(
+                subscription.getTrialEndsAt()
+        )) {
 
-            subscription.setStatus(SubscriptionStatus.EXPIRED);
+            subscription.setStatus(
+                    SubscriptionStatus.EXPIRED
+            );
         }
 
         return toResponse(subscription);
@@ -181,7 +228,11 @@ public class BillingService {
     @Transactional
     public boolean hasAccess(UUID workspaceId) {
 
-        Subscription subscription = subscriptionRepository.findByWorkspaceId(workspaceId)
+        requireWorkspaceId(workspaceId);
+
+        Subscription subscription =
+                subscriptionRepository
+                        .findByWorkspaceId(workspaceId)
                         .orElse(null);
 
         if (subscription == null) {
@@ -189,19 +240,25 @@ public class BillingService {
         }
 
         /*
-         * Active paid subscription or Lifetime.
+         * ACTIVE covers:
+         *
+         * - active recurring Polar subscriptions
+         * - active Lifetime purchases
          */
-        if (subscription.getStatus() == SubscriptionStatus.ACTIVE) {
+        if (subscription.getStatus()
+                == SubscriptionStatus.ACTIVE) {
 
             return true;
         }
 
         /*
-         * Active 7-day trial.
+         * Local 7-day trial.
          */
-        if (subscription.getStatus() == SubscriptionStatus.TRIALING) {
+        if (subscription.getStatus()
+                == SubscriptionStatus.TRIALING) {
 
-            Instant trialEndsAt = subscription.getTrialEndsAt();
+            Instant trialEndsAt =
+                    subscription.getTrialEndsAt();
 
             if (trialEndsAt == null) {
                 return false;
@@ -211,7 +268,9 @@ public class BillingService {
                 return true;
             }
 
-            subscription.setStatus(SubscriptionStatus.EXPIRED);
+            subscription.setStatus(
+                    SubscriptionStatus.EXPIRED
+            );
 
             return false;
         }
@@ -219,103 +278,141 @@ public class BillingService {
         /*
          * PAST_DUE, PAUSED, CANCELED and EXPIRED
          * currently have no access.
-         *
-         * This policy can be changed later.
          */
         return false;
     }
 
     /**
-     * Returns the number of whole calendar days remaining
-     * in the trial, rounded upward.
+     * Returns the number of days remaining in the
+     * local 7-day trial, rounded upward.
      */
     @Transactional
-    public long getTrialDaysRemaining(UUID workspaceId) {
+    public long getTrialDaysRemaining(
+            UUID workspaceId
+    ) {
 
-        workspaceAuthorizationService.requireBillingAccess(workspaceId);
+        workspaceAuthorizationService.requireBillingAccess(
+                workspaceId
+        );
 
-        Subscription subscription = subscriptionRepository.findByWorkspaceId(workspaceId)
-                        .orElseThrow(() -> new IllegalStateException("Billing subscription not found"));
+        Subscription subscription =
+                subscriptionRepository
+                        .findByWorkspaceId(workspaceId)
+                        .orElseThrow(() ->
+                                new IllegalStateException(
+                                        "Billing subscription not found"
+                                )
+                        );
 
-
-
-        if (subscription.getStatus() != SubscriptionStatus.TRIALING || subscription.getTrialEndsAt() == null) {
+        if (subscription.getStatus()
+                != SubscriptionStatus.TRIALING
+                || subscription.getTrialEndsAt() == null) {
 
             return 0;
         }
 
         Instant now = Instant.now();
 
-        if (!now.isBefore(subscription.getTrialEndsAt())) {
+        if (!now.isBefore(
+                subscription.getTrialEndsAt()
+        )) {
 
-            subscription.setStatus(SubscriptionStatus.EXPIRED);
+            subscription.setStatus(
+                    SubscriptionStatus.EXPIRED
+            );
 
             return 0;
         }
 
-        long hoursRemaining = ChronoUnit.HOURS.between(now, subscription.getTrialEndsAt());
+        long hoursRemaining =
+                ChronoUnit.HOURS.between(
+                        now,
+                        subscription.getTrialEndsAt()
+                );
 
-        /*
-         * Round upward:
-         *
-         * 6 days 3 hours → 7
-         * 2 days 1 hour  → 3
-         * 10 hours       → 1
-         */
         return (hoursRemaining + 23) / 24;
     }
 
     /**
-     * Schedules cancellation of a recurring Paddle
-     * subscription at the end of its current period.
-     * <p>
-     * Lifetime purchases cannot be canceled because
-     * they are one-time purchases.
+     * Schedules cancellation of a recurring Polar
+     * subscription at the end of its current billing period.
+     *
+     * Polar remains the source of truth.
+     *
+     * The resulting subscription state is confirmed
+     * through Polar webhook events.
      */
     @Transactional
-    public void cancelSubscription(UUID workspaceId) {
+    public void cancelSubscription(
+            UUID workspaceId
+    ) {
 
-        workspaceAuthorizationService.requireBillingAccess(workspaceId);
+        workspaceAuthorizationService.requireBillingAccess(
+                workspaceId
+        );
 
-        Subscription subscription = subscriptionRepository.findByWorkspaceId(workspaceId)
-                        .orElseThrow(() -> new IllegalStateException("No subscription found"));
+        Subscription subscription =
+                subscriptionRepository
+                        .findByWorkspaceId(workspaceId)
+                        .orElseThrow(() ->
+                                new IllegalStateException(
+                                        "No subscription found"
+                                )
+                        );
 
+        if (subscription.getPlan()
+                == BillingPlan.LIFETIME) {
 
-        if (subscription.getPlan() == BillingPlan.LIFETIME) {
-
-            throw new IllegalStateException("Lifetime plans cannot be canceled");
+            throw new IllegalStateException(
+                    "Lifetime plans cannot be canceled"
+            );
         }
 
-        if (subscription.getStatus() != SubscriptionStatus.ACTIVE) {
+        if (subscription.getStatus()
+                != SubscriptionStatus.ACTIVE) {
 
-            throw new IllegalStateException("Only an active subscription can be canceled");
+            throw new IllegalStateException(
+                    "Only an active subscription can be canceled"
+            );
         }
 
-        String paddleSubscriptionId = subscription.getPaddleSubscriptionId();
+        String providerSubscriptionId =
+                subscription.getProviderSubscriptionId();
 
-        if (paddleSubscriptionId == null || paddleSubscriptionId.isBlank()) {
+        if (providerSubscriptionId == null
+                || providerSubscriptionId.isBlank()) {
 
-            throw new IllegalStateException("Subscription has no Paddle subscription ID");
+            throw new IllegalStateException(
+                    "Subscription has no provider subscription ID"
+            );
         }
-
-        paddleService.cancelSubscription(paddleSubscriptionId);
 
         /*
-         * This does NOT mean the subscription is canceled yet.
+         * Ask Polar to schedule the cancellation.
+         */
+        polarService.cancelSubscription(
+                providerSubscriptionId
+        );
+
+        /*
+         * Optimistically update only the cancellation flag.
          *
-         * Paddle will send the appropriate webhook.
-         *
-         * Until then, the user retains access.
+         * The subscription itself remains ACTIVE until
+         * Polar confirms the resulting state.
          */
         subscription.setCancelAtPeriodEnd(true);
+
+        subscriptionRepository.save(subscription);
     }
 
     /**
-     * Changes the plan of an existing active Paddle subscription.
+     * Changes the plan of an existing active recurring
+     * Polar subscription.
      *
-     * Paddle performs the actual billing change.
-     * The Paddle webhook remains the source of truth and
-     * updates the local Subscription entity.
+     * Polar performs the actual billing operation.
+     *
+     * The local Subscription entity is updated only after
+     * the corresponding Polar webhook is received.
      */
     @Transactional
     public void changePlan(
@@ -323,88 +420,115 @@ public class BillingService {
             BillingPlan newPlan
     ) {
 
-        if (workspaceId == null) {
-            throw new IllegalArgumentException("Workspace ID is required");
-        }
+        requireWorkspaceId(workspaceId);
 
         if (newPlan == null) {
-            throw new IllegalArgumentException("New billing plan is required");
+
+            throw new IllegalArgumentException(
+                    "New billing plan is required"
+            );
         }
 
-        workspaceAuthorizationService.requireBillingAccess(workspaceId);
+        workspaceAuthorizationService.requireBillingAccess(
+                workspaceId
+        );
 
-        Subscription subscription = subscriptionRepository
-                .findByWorkspaceId(workspaceId)
-                .orElseThrow(() ->
-                        new IllegalStateException("Billing subscription not found"));
+        Subscription subscription =
+                subscriptionRepository
+                        .findByWorkspaceId(workspaceId)
+                        .orElseThrow(() ->
+                                new IllegalStateException(
+                                        "Billing subscription not found"
+                                )
+                        );
 
         /*
-         * Plan changes are only supported for active
-         * Paddle recurring subscriptions.
+         * Plan changes are supported only for active
+         * recurring subscriptions.
          */
-        if (subscription.getStatus() != SubscriptionStatus.ACTIVE) {
+        if (subscription.getStatus()
+                != SubscriptionStatus.ACTIVE) {
 
             throw new IllegalStateException(
-                    "Only an active subscription can change plans");
+                    "Only an active subscription can change plans"
+            );
         }
 
         /*
          * Lifetime is a one-time purchase.
          */
-        if (subscription.getPlan() == BillingPlan.LIFETIME) {
+        if (subscription.getPlan()
+                == BillingPlan.LIFETIME) {
 
             throw new IllegalStateException(
-                    "Lifetime plans cannot be changed");
+                    "Lifetime plans cannot be changed"
+            );
         }
 
         /*
-         * Lifetime should be purchased separately.
+         * Lifetime must be purchased through checkout.
          */
         if (newPlan == BillingPlan.LIFETIME) {
 
             throw new IllegalStateException(
-                    "Lifetime cannot be selected through plan change");
+                    "Lifetime cannot be selected through plan change"
+            );
         }
 
         /*
-         * Prevent unnecessary Paddle API calls.
+         * Prevent unnecessary Polar API calls.
          */
         if (subscription.getPlan() == newPlan) {
 
             throw new IllegalStateException(
-                    "Workspace is already subscribed to this plan");
-        }
-
-        String paddleSubscriptionId =
-                subscription.getPaddleSubscriptionId();
-
-        if (paddleSubscriptionId == null
-                || paddleSubscriptionId.isBlank()) {
-
-            throw new IllegalStateException(
-                    "Subscription has no Paddle subscription ID");
-        }
-
-        String newPriceId = getPriceId(newPlan);
-
-        if (newPriceId == null || newPriceId.isBlank()) {
-
-            throw new IllegalStateException(
-                    "Paddle price ID is not configured for plan: "
-                            + newPlan);
+                    "Workspace is already subscribed to this plan"
+            );
         }
 
         /*
-         * Paddle performs the actual plan change.
-         *
-         * Do NOT update subscription.plan here.
-         *
-         * subscription.updated webhook will update
-         * the local database after Paddle confirms it.
+         * Do not silently change a subscription that is
+         * already scheduled for cancellation.
          */
-        paddleService.changeSubscriptionPlan(
-                paddleSubscriptionId,
-                newPriceId
+        if (subscription.isCancelAtPeriodEnd()) {
+
+            throw new IllegalStateException(
+                    "Subscription is scheduled for cancellation"
+            );
+        }
+
+        String providerSubscriptionId =
+                subscription.getProviderSubscriptionId();
+
+        if (providerSubscriptionId == null
+                || providerSubscriptionId.isBlank()) {
+
+            throw new IllegalStateException(
+                    "Subscription has no provider subscription ID"
+            );
+        }
+
+        String newProductId =
+                getProductId(newPlan);
+
+        if (newProductId == null
+                || newProductId.isBlank()) {
+
+            throw new IllegalStateException(
+                    "Polar product ID is not configured for plan: "
+                            + newPlan
+            );
+        }
+
+        /*
+         * Polar performs the actual plan change.
+         *
+         * Do NOT change subscription.plan here.
+         *
+         * The Polar webhook is the source of truth.
+         */
+        polarService.changeSubscriptionPlan(
+                providerSubscriptionId,
+                newProductId
         );
     }
 
@@ -415,7 +539,8 @@ public class BillingService {
             Subscription subscription
     ) {
 
-        BillingPlan plan = subscription.getPlan();
+        BillingPlan plan =
+                subscription.getPlan();
 
         return new SubscriptionResponse(
                 subscription.getWorkspaceId(),
@@ -430,32 +555,74 @@ public class BillingService {
     }
 
     /**
-     * Returns the effective feature and usage limits
+     * Returns the effective feature limits and capabilities
      * for the workspace's current billing plan.
-     *
-     * Any authenticated staff member belonging to the
-     * workspace can read this information.
      */
     @Transactional(readOnly = true)
-    public PlanEntitlementResponse getEntitlements(UUID workspaceId) {
+    public PlanEntitlementResponse getEntitlements(
+            UUID workspaceId
+    ) {
 
-        workspaceAuthorizationService.requireWorkspaceAccess(workspaceId);
+        workspaceAuthorizationService.requireWorkspaceAccess(
+                workspaceId
+        );
 
-        Plan plan = planEntitlementService.getPlan(workspaceId);
+        Plan plan =
+                planEntitlementService.getPlan(
+                        workspaceId
+                );
 
         return PlanEntitlementResponse.builder()
-                .billingPlan(plan.getBillingPlan())
-                .planName(plan.getBillingPlan().getDisplayName())
-                .billingInterval(plan.getBillingPlan().getBillingInterval())
-                .maxTeamMembers(plan.getMaxTeamMembers())
-                .maxBoards(plan.getMaxBoards())
-                .maxFeedbackPosts(plan.getMaxFeedbackPosts())
-                .maxEndUsers(plan.getMaxEndUsers())
-                .maxRoadmapItems(plan.getMaxRoadmapItems())
-                .maxChangelogEntries(plan.getMaxChangelogEntries())
-                .customBranding(plan.isCustomBranding())
-                .removeFidmapBranding(plan.isRemoveFidmapBranding())
-                .privateBoards(plan.isPrivateBoards())
+                .billingPlan(
+                        plan.getBillingPlan()
+                )
+                .planName(
+                        plan.getBillingPlan()
+                                .getDisplayName()
+                )
+                .billingInterval(
+                        plan.getBillingPlan()
+                                .getBillingInterval()
+                )
+                .maxTeamMembers(
+                        plan.getMaxTeamMembers()
+                )
+                .maxBoards(
+                        plan.getMaxBoards()
+                )
+                .maxFeedbackPosts(
+                        plan.getMaxFeedbackPosts()
+                )
+                .maxEndUsers(
+                        plan.getMaxEndUsers()
+                )
+                .maxRoadmapItems(
+                        plan.getMaxRoadmapItems()
+                )
+                .maxChangelogEntries(
+                        plan.getMaxChangelogEntries()
+                )
+                .customBranding(
+                        plan.isCustomBranding()
+                )
+                .removeFidmapBranding(
+                        plan.isRemoveFidmapBranding()
+                )
+                .privateBoards(
+                        plan.isPrivateBoards()
+                )
                 .build();
+    }
+
+    private void requireWorkspaceId(
+            UUID workspaceId
+    ) {
+
+        if (workspaceId == null) {
+
+            throw new IllegalArgumentException(
+                    "Workspace ID is required"
+            );
+        }
     }
 }

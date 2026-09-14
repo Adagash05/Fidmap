@@ -8,19 +8,23 @@ import java.util.UUID;
 public interface SubscriptionRepository
         extends JpaRepository<Subscription, UUID> {
 
-    Optional<Subscription> findByWorkspaceId(UUID workspaceId);
-
-    Optional<Subscription> findByPaddleSubscriptionId(
-            String paddleSubscriptionId
+    Optional<Subscription> findByWorkspaceId(
+            UUID workspaceId
     );
 
-    Optional<Subscription> findByPaddleTransactionId(
-            String paddleTransactionId
+    Optional<Subscription> findByProviderSubscriptionId(
+            String providerSubscriptionId
     );
 
-    Optional<Subscription> findByPaddleCustomerId(
-            String paddleCustomerId
+    Optional<Subscription> findByProviderTransactionId(
+            String providerTransactionId
     );
 
-    boolean existsByWorkspaceId(UUID workspaceId);
+    Optional<Subscription> findByProviderCustomerId(
+            String providerCustomerId
+    );
+
+    boolean existsByWorkspaceId(
+            UUID workspaceId
+    );
 }

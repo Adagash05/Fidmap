@@ -1,5 +1,6 @@
 package com.amsal.fidmap.payment.billing;
 
+import com.amsal.fidmap.config.FidmapConfig;
 import com.amsal.fidmap.payment.subscription.SubscriptionResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -13,7 +14,7 @@ import java.util.UUID;
 public class BillingController {
 
     private final BillingService billingService;
-
+    private final FidmapConfig fidmapConfig;
 
     /**
      * Get the current billing/subscription status
@@ -31,7 +32,6 @@ public class BillingController {
         );
     }
 
-
     /**
      * Get the number of days remaining in the
      * workspace's free trial.
@@ -47,7 +47,6 @@ public class BillingController {
                 billingService.getTrialDaysRemaining(workspaceId)
         );
     }
-
 
     /**
      * Get the effective feature limits and capabilities
@@ -66,13 +65,14 @@ public class BillingController {
         );
     }
 
-
     /**
      * Change the plan of an existing Startup or Business
      * recurring subscription.
      *
-     * Paddle performs the billing change and the webhook
-     * updates the local subscription record.
+     * Polar performs the billing change.
+     *
+     * The Polar webhook updates the local subscription
+     * after Polar confirms the change.
      */
     @PatchMapping("/subscription/plan")
     public ResponseEntity<Void> changePlan(
@@ -88,12 +88,11 @@ public class BillingController {
         return ResponseEntity.noContent().build();
     }
 
-
     /**
-     * Create Paddle Checkout information for
-     * Startup, Business, or Lifetime.
+     * Creates a Polar hosted checkout session.
      *
-     * This endpoint is NOT used for the free trial.
+     * This endpoint is not used for the local FIDMAP
+     * 7-day trial.
      */
     @PostMapping("/checkout")
     public ResponseEntity<CheckoutResponse> checkout(
@@ -109,12 +108,12 @@ public class BillingController {
         );
     }
 
-
     /**
-     * Cancel a recurring Startup or Business subscription.
+     * Schedules a recurring subscription for cancellation
+     * at the end of the current billing period.
      *
-     * Lifetime plans cannot be canceled because they are
-     * one-time purchases.
+     * Lifetime plans cannot be canceled because they
+     * are one-time purchases.
      */
     @PostMapping("/cancel")
     public ResponseEntity<Void> cancel(
@@ -126,5 +125,21 @@ public class BillingController {
         return ResponseEntity.noContent().build();
     }
 
+    @GetMapping("/success")
+    public ResponseEntity<Void> paymentSuccess(
+            @RequestParam(required = false) String checkoutId
+    ) {
 
+        String frontendUrl = fidmapConfig.getFrontendUrl();
+
+        String redirectUrl = frontendUrl + "/settings/billing?payment=success";
+
+        return ResponseEntity
+                .status(302)
+                .header(
+                        "Location",
+                        redirectUrl
+                )
+                .build();
+    }
 }

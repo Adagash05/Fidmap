@@ -22,16 +22,16 @@ import java.util.UUID;
                         columnList = "workspace_id"
                 ),
                 @Index(
-                        name = "idx_subscription_paddle_subscription_id",
-                        columnList = "paddle_subscription_id"
+                        name = "idx_subscription_provider_subscription_id",
+                        columnList = "provider_subscription_id"
                 ),
                 @Index(
-                        name = "idx_subscription_paddle_customer_id",
-                        columnList = "paddle_customer_id"
+                        name = "idx_subscription_provider_customer_id",
+                        columnList = "provider_customer_id"
                 ),
                 @Index(
-                        name = "idx_subscription_paddle_transaction_id",
-                        columnList = "paddle_transaction_id"
+                        name = "idx_subscription_provider_transaction_id",
+                        columnList = "provider_transaction_id"
                 )
         }
 )
@@ -49,86 +49,57 @@ public class Subscription {
     /**
      * FIDMAP workspace that owns this billing record.
      *
-     * Each workspace should have exactly one subscription record.
+     * Each workspace has exactly one local billing record.
      */
     @Column(name = "workspace_id", nullable = false)
     private UUID workspaceId;
 
+    /**
+     * Billing provider customer ID.
+     *
+     * Provider-neutral so the FIDMAP domain is not coupled
+     * to Polar or any future billing provider.
+     */
+    @Column(name = "provider_customer_id")
+    private String providerCustomerId;
 
     /**
-     * Paddle customer ID.
+     * Billing provider subscription ID.
      *
-     * Example:
-     * ctm_01...
-     *
-     * Nullable during the free trial.
+     * Null for local trials and Lifetime purchases.
      */
     @Column(
-            name = "paddle_customer_id"
-    )
-    private String paddleCustomerId;
-
-
-    /**
-     * Paddle recurring subscription ID.
-     *
-     * Used by Startup and Business.
-     *
-     * Nullable for:
-     * - Free trial
-     * - Lifetime
-     */
-    @Column(
-            name = "paddle_subscription_id",
+            name = "provider_subscription_id",
             unique = true
     )
-    private String paddleSubscriptionId;
-
-
-    /**
-     * Paddle transaction ID.
-     *
-     * Primarily used for the Lifetime one-time purchase.
-     *
-     * Example:
-     * txn_01...
-     */
-    @Column(
-            name = "paddle_transaction_id"
-    )
-    private String paddleTransactionId;
-
+    private String providerSubscriptionId;
 
     /**
-     * Paddle price ID associated with the current plan.
+     * Billing provider transaction/order ID.
      *
-     * Startup:
-     * pri_...
-     *
-     * Business:
-     * pri_...
-     *
-     * Lifetime:
-     * pri_...
+     * Used to identify the payment associated with the
+     * billing record, particularly for one-time purchases.
      */
-    @Column(name = "paddle_price_id")
-    private String paddlePriceId;
+    @Column(name = "provider_transaction_id")
+    private String providerTransactionId;
 
+    /**
+     * Billing provider product ID.
+     *
+     * Used to map a Polar product back to a FIDMAP billing plan.
+     */
+    @Column(name = "provider_product_id")
+    private String providerProductId;
 
     /**
      * Current FIDMAP billing plan.
-     *
-     * STARTUP
-     * BUSINESS
-     * LIFETIME
      */
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private BillingPlan plan;
 
-
     /**
-     * Current billing/access status.
+     * Current FIDMAP billing/access status.
      *
      * TRIALING
      * ACTIVE
@@ -141,29 +112,25 @@ public class Subscription {
     @Column(nullable = false)
     private SubscriptionStatus status;
 
-
     /**
      * Start of the current paid billing period.
      *
-     * Nullable during trial and Lifetime.
+     * Nullable during the local trial and Lifetime.
      */
     @Column(name = "current_period_start")
     private Instant currentPeriodStart;
 
-
     /**
      * End of the current paid billing period.
      *
-     * Nullable during trial and Lifetime.
+     * Nullable during the local trial and Lifetime.
      */
     @Column(name = "current_period_end")
     private Instant currentPeriodEnd;
 
-
     /**
-     * Whether a recurring subscription has been
-     * scheduled for cancellation at the end
-     * of the current billing period.
+     * Whether a recurring subscription is scheduled
+     * for cancellation at the end of the current period.
      */
     @Builder.Default
     @Column(
@@ -172,24 +139,21 @@ public class Subscription {
     )
     private boolean cancelAtPeriodEnd = false;
 
-
     /**
-     * Start of the 7-day free trial.
+     * Start of the FIDMAP 7-day local trial.
      *
-     * No Paddle payment is required.
+     * No Polar payment is required.
      */
     @Column(name = "trial_starts_at")
     private Instant trialStartsAt;
 
-
     /**
-     * End of the 7-day free trial.
+     * End of the FIDMAP 7-day local trial.
      *
-     * No Paddle payment is required.
+     * No Polar payment is required.
      */
     @Column(name = "trial_ends_at")
     private Instant trialEndsAt;
-
 
     /**
      * Record creation timestamp.
@@ -201,7 +165,6 @@ public class Subscription {
     )
     private Instant createdAt;
 
-
     /**
      * Last modification timestamp.
      */
@@ -211,7 +174,6 @@ public class Subscription {
     )
     private Instant updatedAt;
 
-
     @PrePersist
     void onCreate() {
         Instant now = Instant.now();
@@ -219,7 +181,6 @@ public class Subscription {
         createdAt = now;
         updatedAt = now;
     }
-
 
     @PreUpdate
     void onUpdate() {
