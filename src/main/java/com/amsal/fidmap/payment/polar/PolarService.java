@@ -54,8 +54,8 @@ public class PolarService {
         requireValue(embedOrigin, "Checkout embed origin");
 
         Map<String, Object> body = Map.of(
-                "products",
-                new String[]{productId},
+                "product_id",
+                productId,
 
                 "metadata",
                 Map.of(
