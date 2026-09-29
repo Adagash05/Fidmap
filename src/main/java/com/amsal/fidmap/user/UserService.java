@@ -53,7 +53,12 @@ public class UserService implements UserDetailsService {
             throw new UserNotFoundException("user not found");
         }
 
+        if (user.getWorkspace() == null && user.getRole() == Role.PARTNER) {
+
+        }
+
         UserDto dto = userMapper.toUserDto(user);
+
 
         return ApiResponse.success("current user", dto);
     }

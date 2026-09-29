@@ -1,5 +1,6 @@
 package com.amsal.fidmap.authentication;
 
+import com.amsal.fidmap.user.UserDto;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -17,6 +18,8 @@ public class AuthenticationResponse {
 
 
     private String refreshToken;
+
+    private UserDto user;
 }
 
 
