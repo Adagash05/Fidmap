@@ -4,6 +4,7 @@ import com.amsal.fidmap.changeLog.ChangeLog;
 import com.amsal.fidmap.comment.Comment;
 import com.amsal.fidmap.endUser.EndUser;
 import com.amsal.fidmap.feedbackPost.FeedbackPost;
+import com.amsal.fidmap.referral.ReferralPartner;
 import com.amsal.fidmap.surveyFile.survey.Survey;
 import com.amsal.fidmap.user.User;
 import jakarta.persistence.*;
@@ -62,6 +63,10 @@ public class Workspace {
 
     @OneToMany(mappedBy = "workspace")
     private List<User> user = new ArrayList<>();
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "referral_partner_id")
+    private ReferralPartner referralPartner;
 
 //    @OneToMany(mappedBy = "workspace")
 //    private Set<WorkspaceMembership> workspaceMemberships = new HashSet<>();

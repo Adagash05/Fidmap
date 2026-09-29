@@ -27,7 +27,9 @@ public enum Permissions {
     MEMBER_READ("member:read"),
     MEMBER_CREATE("member:create"),
     MEMBER_UPDATE("member:update"),
-    MEMBER_DELETE("member:delete");
+    MEMBER_DELETE("member:delete"),
+
+    PARTNER_READ("partner:read");
 
 
     @Getter

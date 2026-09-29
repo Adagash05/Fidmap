@@ -5,6 +5,7 @@ package com.amsal.fidmap.authentication;
 import com.amsal.fidmap.apiResponse.ApiResponse;
 import com.amsal.fidmap.exception.UserNotFoundException;
 import com.amsal.fidmap.jwt.JwtService;
+import com.amsal.fidmap.referral.ReferralService;
 import com.amsal.fidmap.token.Token;
 import com.amsal.fidmap.token.TokenRepository;
 import com.amsal.fidmap.token.TokenType;
@@ -41,6 +42,7 @@ public class AuthenticationService {
     private final TokenRepository tokenRepository;
     private final UserMapper userMapper;
     private final WorkspaceService workspaceService;
+    private final ReferralService referralService;
 
 
     /*
@@ -63,6 +65,18 @@ public class AuthenticationService {
 
         //Create new Workspace
         var workspaceResponse = workspaceService.createWorkspace(workspaceDto, user);
+
+
+        /*
+         * First-touch referral attribution.
+         *
+         * Invalid/missing referral codes do not
+         * interfere with normal registration.
+         */
+        referralService.attributeWorkspace(
+                workspaceResponse.getData().getId(),
+                firstUser.getReferralCode()
+        );
 
         userRepository.save(user);
 

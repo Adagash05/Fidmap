@@ -47,7 +47,14 @@ public enum Role {
                     MEMBER_UPDATE,
                     MEMBER_DELETE
             )
-    );
+    ),
+    PARTNER(
+            Set.of(
+                    PARTNER_READ
+            )
+    )
+    ;
+
 
 
     @Getter

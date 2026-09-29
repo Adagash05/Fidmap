@@ -4,6 +4,7 @@ import com.amsal.fidmap.payment.billing.BillingPlan;
 import com.amsal.fidmap.payment.subscription.Subscription;
 import com.amsal.fidmap.payment.subscription.SubscriptionRepository;
 import com.amsal.fidmap.payment.subscription.SubscriptionStatus;
+import com.amsal.fidmap.referral.ReferralService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,6 +22,7 @@ public class PolarWebhookService {
     private final PolarWebhookEventRepository eventRepository;
     private final SubscriptionRepository subscriptionRepository;
     private final PolarConfig polarConfig;
+    private final ReferralService referralService;
 
     @Transactional
     public void process(
@@ -336,24 +338,16 @@ public class PolarWebhookService {
         }
 
         /*
-         * Recurring subscriptions also generate paid orders.
+         * Every paid Polar order is a potential
+         * referral conversion.
          *
-         * Their subscription state is handled by the
-         * subscription webhooks, so we do not create/update
-         * the Subscription entity here.
+         * This includes:
+         *
+         * - first subscription payment
+         * - recurring subscription renewal
+         * - Lifetime purchase
          */
-        String subscriptionId =
-                data.path("subscription_id").asText(null);
 
-        if (subscriptionId != null
-                && !subscriptionId.isBlank()) {
-            return;
-        }
-
-        /*
-         * No subscription_id means this can be a one-time
-         * purchase, which is how FIDMAP Lifetime works.
-         */
         String productId =
                 data.path("product_id").asText(null);
 
@@ -367,53 +361,120 @@ public class PolarWebhookService {
         BillingPlan plan =
                 determinePlan(productId);
 
-        /*
-         * Currently FIDMAP only uses order.paid for
-         * the Lifetime one-time product.
-         */
-        if (plan != BillingPlan.LIFETIME) {
-            return;
-        }
-
         UUID workspaceId =
                 extractWorkspaceId(data);
 
         String customerId =
                 data.path("customer_id").asText(null);
 
-        Subscription subscription =
-                subscriptionRepository
-                        .findByWorkspaceId(workspaceId)
-                        .orElseGet(Subscription::new);
-
-        subscription.setWorkspaceId(workspaceId);
-
-        subscription.setProviderCustomerId(customerId);
-
-        subscription.setProviderTransactionId(orderId);
-
-        subscription.setProviderProductId(productId);
-
-        subscription.setProviderSubscriptionId(null);
-
-        subscription.setPlan(BillingPlan.LIFETIME);
-
-        subscription.setStatus(
-                SubscriptionStatus.ACTIVE
-        );
+        String subscriptionId =
+                data.path("subscription_id")
+                        .asText(null);
 
         /*
-         * Lifetime has no recurring billing period.
+         * Keep the existing billing behavior.
+         *
+         * Lifetime creates its local subscription record
+         * from order.paid.
+         *
+         * Recurring plans are handled by subscription
+         * webhooks.
          */
-        subscription.setCurrentPeriodStart(null);
-        subscription.setCurrentPeriodEnd(null);
+        if (subscriptionId == null
+                || subscriptionId.isBlank()) {
 
-        subscription.setTrialStartsAt(null);
-        subscription.setTrialEndsAt(null);
+            if (plan == BillingPlan.LIFETIME) {
 
-        subscription.setCancelAtPeriodEnd(false);
+                Subscription subscription =
+                        subscriptionRepository
+                                .findByWorkspaceId(
+                                        workspaceId
+                                )
+                                .orElseGet(
+                                        Subscription::new
+                                );
 
-        subscriptionRepository.save(subscription);
+                subscription.setWorkspaceId(
+                        workspaceId
+                );
+
+                subscription.setProviderCustomerId(
+                        customerId
+                );
+
+                subscription.setProviderTransactionId(
+                        orderId
+                );
+
+                subscription.setProviderProductId(
+                        productId
+                );
+
+                subscription.setProviderSubscriptionId(
+                        null
+                );
+
+                subscription.setPlan(
+                        BillingPlan.LIFETIME
+                );
+
+                subscription.setStatus(
+                        SubscriptionStatus.ACTIVE
+                );
+
+                subscription.setCurrentPeriodStart(
+                        null
+                );
+
+                subscription.setCurrentPeriodEnd(
+                        null
+                );
+
+                subscription.setTrialStartsAt(
+                        null
+                );
+
+                subscription.setTrialEndsAt(
+                        null
+                );
+
+                subscription.setCancelAtPeriodEnd(
+                        false
+                );
+
+                subscriptionRepository.save(
+                        subscription
+                );
+            }
+        }
+
+        /*
+         * Referral revenue
+         *
+         * Polar amounts are represented in the smallest
+         * currency unit.
+         *
+         * Prefer net_amount when present, then fall back
+         * to total_amount.
+         */
+        long revenueAmountMinor = extractOrderAmount(data);
+
+        String currency = data.path("currency").asText("USD");
+
+        /*
+         * Record referral conversion.
+         *
+         * ReferralService is idempotent by Polar order ID.
+         */
+        referralService.recordPaidOrder(
+                workspaceId,
+                orderId,
+                subscriptionId,
+                productId,
+                plan.name(),
+                revenueAmountMinor,
+                currency
+        );
     }
 
     private UUID extractWorkspaceId(JsonNode data) {
@@ -570,5 +631,49 @@ public class PolarWebhookService {
                     e
             );
         }
+    }
+
+    private long extractOrderAmount(
+            JsonNode data
+    ) {
+
+        /*
+         * Polar order amounts are represented as
+         * integer minor units.
+         *
+         * Prefer net_amount because it represents the
+         * order amount after discounts.
+         */
+        JsonNode netAmount =
+                data.path("net_amount");
+
+        if (netAmount.isNumber()) {
+
+            return netAmount.asLong();
+        }
+
+        /*
+         * Fallback for payloads where net_amount
+         * is not present.
+         */
+        JsonNode totalAmount =
+                data.path("total_amount");
+
+        if (totalAmount.isNumber()) {
+
+            return totalAmount.asLong();
+        }
+
+        JsonNode subtotalAmount =
+                data.path("subtotal_amount");
+
+        if (subtotalAmount.isNumber()) {
+
+            return subtotalAmount.asLong();
+        }
+
+        throw new IllegalArgumentException(
+                "Polar paid order does not contain a supported amount"
+        );
     }
 }

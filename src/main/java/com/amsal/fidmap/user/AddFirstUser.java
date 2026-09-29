@@ -10,6 +10,16 @@ public class AddFirstUser {
     private String fullName;
 
     private String email;
+
     //optional
     private String password;
+
+
+    /**
+     * Optional referral/partner code.
+     *
+     * Example:
+     * KAMAL
+     */
+    private String referralCode;
 }

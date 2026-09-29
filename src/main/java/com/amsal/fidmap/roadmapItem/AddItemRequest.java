@@ -15,6 +15,7 @@ public class AddItemRequest {
 
     private String description;
 
+    //todo the target date is not implemented in the frontend creating,so add it
     private LocalDate targetDate;
 
     private RoadMapStatus status;

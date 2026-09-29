@@ -61,6 +61,7 @@ public class SecurityConfig {
             "/api/billing/**",
             "/billing/success/**",
             "/billing/**",
+            "/api/partner/auth/accept-invitation",
 //            "/auth/**",
 //            "/board/**",
 //            "/comment/**",
@@ -122,6 +123,17 @@ public class SecurityConfig {
                                         "/workspaces/changelog/**").permitAll()
                                 .requestMatchers(HttpMethod.POST, "/feedback/board/{boardId}",
                                         "/comment/**", "/vote/**").permitAll()
+
+                                .requestMatchers(
+                                        "/api/partner/referrals/**"
+                                ).hasRole("PARTNER")
+
+                                .requestMatchers(
+                                        "/api/admin/referrals/**"
+                                )
+                                .hasRole(Role.SUPER_ADMIN.name())
+
+
                                 .requestMatchers("/feedback/user/me").authenticated()
 
 
