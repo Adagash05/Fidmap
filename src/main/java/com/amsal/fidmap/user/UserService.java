@@ -50,7 +50,7 @@ public class UserService implements UserDetailsService {
         User user = userRepository.findUserById(userId);
 
         UserDto dto = userMapper.toUserDto(user);
-        dto.setWorkspaceId(user.getWorkspace().getId());
+        dto.setWorkspaceId(user.getWorkspace().getId() != null ? user.getWorkspace().getId() : null);
 
         return ApiResponse.success("current user", dto);
     }

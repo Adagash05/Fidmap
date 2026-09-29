@@ -28,7 +28,7 @@ public class UserMapper {
         dto.setFullName(user.getFullName());
         dto.setEmail(user.getEmail());
         dto.setRole(user.getRole());
-        dto.setWorkspaceId(user.getWorkspace().getId());
+        dto.setWorkspaceId(user.getWorkspace() != null ? user.getWorkspace().getId() : null);
 
 
 
