@@ -55,6 +55,7 @@ public class UserService implements UserDetailsService {
 
         if (user.getWorkspace() == null && user.getRole() == Role.PARTNER) {
 
+            throw new UserNotFoundException("sorry you are not allowed to access this resources,kindly sign to the partner dashboard");
         }
 
         UserDto dto = userMapper.toUserDto(user);
