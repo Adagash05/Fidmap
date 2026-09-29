@@ -49,8 +49,11 @@ public class UserService implements UserDetailsService {
         UUID userId = SecurityUtils.getCurrentUserId();
         User user = userRepository.findUserById(userId);
 
+        if (user == null) {
+            throw new UserNotFoundException("user not found");
+        }
+
         UserDto dto = userMapper.toUserDto(user);
-        dto.setWorkspaceId(user.getWorkspace().getId() != null ? user.getWorkspace().getId() : null);
 
         return ApiResponse.success("current user", dto);
     }
