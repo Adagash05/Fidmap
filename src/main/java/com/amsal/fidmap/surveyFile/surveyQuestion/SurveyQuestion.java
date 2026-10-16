@@ -28,6 +28,9 @@ public class SurveyQuestion {
 
     private Integer position;
 
+    /** Null (legacy rows) is treated as not required. */
+    private Boolean required;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "survey_id", nullable = false)
     private Survey survey;

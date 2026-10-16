@@ -2,6 +2,7 @@ package com.amsal.fidmap.surveyFile.surveyResponse;
 
 import com.amsal.fidmap.surveyFile.survey.Survey;
 import com.amsal.fidmap.surveyFile.surveyAnswer.SurveyAnswer;
+import com.amsal.fidmap.endUser.EndUser;
 import com.amsal.fidmap.user.User;
 import jakarta.persistence.*;
 import lombok.*;
@@ -11,6 +12,13 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Entity
+@Table(
+        name = "survey_response",
+        uniqueConstraints = @UniqueConstraint(
+                name = "uk_survey_response_respondent",
+                columnNames = {"survey_id", "end_user_id"}
+        )
+)
 @Getter
 @Setter
 @NoArgsConstructor
@@ -31,6 +39,11 @@ public class SurveyResponse {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id")
     private User user;
+
+    /** The public respondent (identified by email). One response per respondent per survey. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "end_user_id")
+    private EndUser endUser;
 
     @OneToMany(
             mappedBy = "response",

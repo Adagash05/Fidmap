@@ -29,49 +29,52 @@ import static org.springframework.http.HttpMethod.*;
 public class SecurityConfig {
 
 
+    /**
+     * Endpoints reachable without a token (any HTTP method).
+     * Everything else requires authentication; tenant authorization is then
+     * enforced in the services via WorkspaceAuthorizationService.
+     */
     private static final String[] PUBLIC_URLS = {
 
-            "/swagger-ui.html",
-            "/swagger-ui/**",
             "/auth/**",
             "/oauth2/**",
             "/login/**",
             "/api/public/**",
 
-            "/v3/api-docs/**",
             "/", "/home", "/index",
-            "/webjars/**",
             "/error",
             "/favicon.ico",
-            "/board/public/workspace/**",
-            "/feedback/board/{boardId}",
-            "/feedback/board/{boardId}/feedback/{feedbackId}",
-            "/comment/{feedbackId}",
-            "/vote/{feedbackId}",
-            "/roadmap/{roadmapId}/items",
-            "/workspaces/{workspaceId}/changelogs",
-            "/workspace/slug/**",
-            "/vote/**",
 
             "/api/webhooks/polar/**",
             "/api/auth/forgot-password",
             "/api/auth/reset-password",
 
-
-            "/api/billing/**",
+            // Polar redirects the browser here after checkout (no Authorization header).
+            "/api/billing/success",
             "/billing/success/**",
-            "/billing/**",
             "/api/partner/auth/accept-invitation",
-//            "/auth/**",
-//            "/board/**",
-//            "/comment/**",
-//            "/workspace/**",
-//            "/roadmap/**",
-//            "/workspaces",
-//            "/feedback/board/**",
-//            "/roadmap/item/**",
+    };
 
+    /** Public READ-ONLY endpoints (portal, public roadmap, public changelog). */
+    private static final String[] PUBLIC_GET_URLS = {
+            "/board/public/workspace/**",
+            "/board/{id}",
+            "/feedback/board/{boardId}",
+            "/feedback/board/{boardId}/page",
+            "/feedback/board/{boardId}/feedback/{feedbackId}",
+            "/comment/{feedbackId}",
+            "/vote/board/{boardId}",
+            "/roadmap/**",
+            "/workspaces/*/changelogs",
+            "/workspaces/changelog/**",
+            "/workspace/slug/**",
+    };
 
+    /** Public WRITE endpoints used by anonymous portal visitors (name + email). */
+    private static final String[] PUBLIC_POST_URLS = {
+            "/feedback/board/{boardId}",
+            "/comment/{feedbackId}",
+            "/vote/{feedbackId}",
     };
 
     private static final String[] OWNER_READ_URLS = {
@@ -116,29 +119,28 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
 
-                                .requestMatchers(PUBLIC_URLS).permitAll()
                                 .requestMatchers(OPTIONS, "/**").permitAll()
-                                .requestMatchers(HttpMethod.GET, "/board/{id}", "/feedback/board/**",
-                                        "/comment/**", "/roadmap/**", "/workspaces/*/changelogs",
-                                        "/workspaces/changelog/**").permitAll()
-                                .requestMatchers(HttpMethod.POST, "/feedback/board/{boardId}",
-                                        "/comment/**", "/vote/**").permitAll()
+                                .requestMatchers(PUBLIC_URLS).permitAll()
+                                .requestMatchers(HttpMethod.GET, PUBLIC_GET_URLS).permitAll()
+                                .requestMatchers(HttpMethod.POST, PUBLIC_POST_URLS).permitAll()
+
+                                // API documentation is not public in production.
+                                .requestMatchers(
+                                        "/swagger-ui.html",
+                                        "/swagger-ui/**",
+                                        "/v3/api-docs/**",
+                                        "/webjars/**"
+                                ).hasRole(Role.SUPER_ADMIN.name())
 
                                 .requestMatchers(
                                         "/api/partner/referrals/**"
                                 ).hasRole("PARTNER")
 
                                 .requestMatchers(
-                                        "/api/admin/referrals/**"
+                                        "/api/admin/**"
                                 )
                                 .hasRole(Role.SUPER_ADMIN.name())
 
-
-                                .requestMatchers("/feedback/user/me").authenticated()
-
-
-//                        .requestMatchers("/board/**").hasRole(Role.ADMIN.name())
-//                        .requestMatchers(POST,"/board/**").hasAuthority(Permissions.ADMIN_CREATE.name())
                                 .anyRequest().authenticated()
                 )
 

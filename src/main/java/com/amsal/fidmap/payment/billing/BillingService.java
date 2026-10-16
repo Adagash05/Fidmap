@@ -203,83 +203,20 @@ public class BillingService {
                                 )
                         );
 
-        /*
-         * Automatically expire an ended local trial.
-         */
-        if (subscription.getStatus()
-                == SubscriptionStatus.TRIALING
-                && subscription.getTrialEndsAt() != null
-                && !Instant.now().isBefore(
-                subscription.getTrialEndsAt()
-        )) {
-
-            subscription.setStatus(
-                    SubscriptionStatus.EXPIRED
-            );
-        }
-
         return toResponse(subscription);
     }
 
     /**
      * Determines whether the workspace currently has
-     * access to the application.
+     * access to the application. Delegates to the single
+     * server-side entitlement evaluation.
      */
-    @Transactional
+    @Transactional(readOnly = true)
     public boolean hasAccess(UUID workspaceId) {
 
         requireWorkspaceId(workspaceId);
 
-        Subscription subscription =
-                subscriptionRepository
-                        .findByWorkspaceId(workspaceId)
-                        .orElse(null);
-
-        if (subscription == null) {
-            return false;
-        }
-
-        /*
-         * ACTIVE covers:
-         *
-         * - active recurring Polar subscriptions
-         * - active Lifetime purchases
-         */
-        if (subscription.getStatus()
-                == SubscriptionStatus.ACTIVE) {
-
-            return true;
-        }
-
-        /*
-         * Local 7-day trial.
-         */
-        if (subscription.getStatus()
-                == SubscriptionStatus.TRIALING) {
-
-            Instant trialEndsAt =
-                    subscription.getTrialEndsAt();
-
-            if (trialEndsAt == null) {
-                return false;
-            }
-
-            if (Instant.now().isBefore(trialEndsAt)) {
-                return true;
-            }
-
-            subscription.setStatus(
-                    SubscriptionStatus.EXPIRED
-            );
-
-            return false;
-        }
-
-        /*
-         * PAST_DUE, PAUSED, CANCELED and EXPIRED
-         * currently have no access.
-         */
-        return false;
+        return planEntitlementService.hasActiveAccess(workspaceId);
     }
 
     /**
@@ -316,10 +253,6 @@ public class BillingService {
         if (!now.isBefore(
                 subscription.getTrialEndsAt()
         )) {
-
-            subscription.setStatus(
-                    SubscriptionStatus.EXPIRED
-            );
 
             return 0;
         }
@@ -542,11 +475,14 @@ public class BillingService {
         BillingPlan plan =
                 subscription.getPlan();
 
+        PlanEntitlementService.AccessState access =
+                PlanEntitlementService.evaluate(subscription, Instant.now());
+
         return new SubscriptionResponse(
                 subscription.getWorkspaceId(),
                 plan,
                 plan.getDisplayName(),
-                subscription.getStatus(),
+                access.effectiveStatus(),
                 subscription.getCurrentPeriodStart(),
                 subscription.getCurrentPeriodEnd(),
                 subscription.isCancelAtPeriodEnd(),
@@ -572,7 +508,16 @@ public class BillingService {
                         workspaceId
                 );
 
+        PlanEntitlementService.AccessState access =
+                planEntitlementService.getAccessState(
+                        workspaceId
+                );
+
         return PlanEntitlementResponse.builder()
+                .status(access.effectiveStatus())
+                .accessActive(access.active())
+                .accessReason(access.reasonCode())
+                .accessEndsAt(access.accessEndsAt())
                 .billingPlan(
                         plan.getBillingPlan()
                 )

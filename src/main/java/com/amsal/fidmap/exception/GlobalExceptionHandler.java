@@ -146,7 +146,7 @@ public class GlobalExceptionHandler {
         //Return to postman
 
          return ResponseEntity
-                .status(HttpStatus.NOT_FOUND)
+                .status(HttpStatus.FORBIDDEN)
                 .body(ApiResponse.error(ex.getMessage()));
 
     }
@@ -162,7 +162,7 @@ public class GlobalExceptionHandler {
         //Return to postman
 
          return ResponseEntity
-                .status(HttpStatus.NOT_FOUND)
+                .status(HttpStatus.CONFLICT)
                 .body(ApiResponse.error(ex.getMessage()));
 
     }
@@ -206,16 +206,36 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.error(ex.getMessage()));
     }
 
-//    @ExceptionHandler(IllegalStateException.class)
-//    public ResponseEntity<ApiResponse<Void>> handleIllegalStateException(
-//            IllegalStateException ex,
-//            HttpServletRequest request
-//    ) {
-//
-//        System.err.println(ex.getMessage());
-//
-//        return ResponseEntity
-//                .status(HttpStatus.BAD_REQUEST)
-//                .body(ApiResponse.error(ex.getMessage()));
-//    }
+    @ExceptionHandler(SurveyNotFoundException.class)
+    public ResponseEntity<ApiResponse<Void>> handleSurveyNotFoundException(
+            SurveyNotFoundException ex,
+            HttpServletRequest request
+    ) {
+
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(ApiResponse.error(ex.getMessage()));
+    }
+
+    @ExceptionHandler(SubscriptionRequiredException.class)
+    public ResponseEntity<ApiResponse<Void>> handleSubscriptionRequiredException(
+            SubscriptionRequiredException ex,
+            HttpServletRequest request
+    ) {
+
+        return ResponseEntity
+                .status(HttpStatus.PAYMENT_REQUIRED)
+                .body(ApiResponse.error(ex.getMessage()));
+    }
+
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<ApiResponse<Void>> handleIllegalStateException(
+            IllegalStateException ex,
+            HttpServletRequest request
+    ) {
+
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(ApiResponse.error(ex.getMessage()));
+    }
 }

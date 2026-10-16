@@ -1,18 +1,16 @@
 package com.amsal.fidmap.surveyFile.survey;
 
 import com.amsal.fidmap.surveyFile.surveyQuestion.SurveyQuestionDto;
-import jakarta.persistence.Column;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
-import lombok.RequiredArgsConstructor;
+import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 
-@RequiredArgsConstructor
+@NoArgsConstructor
 @AllArgsConstructor
 @Getter
 @Setter
@@ -29,4 +27,8 @@ public class SurveyDto {
     private LocalDateTime publishedAt;
 
     private List<SurveyQuestionDto> questions;
+
+    private UUID linkedFeedbackPostId;
+
+    private long responseCount;
 }

@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -19,6 +20,19 @@ public interface EndUserRepository extends JpaRepository<EndUser, UUID> {
     EndUser findEndUserById(UUID endUserId);
 
     boolean existsByEmail(String email);
+
+    List<EndUser> findAllByEmailIgnoreCase(String email);
+
+    @Query("""
+                SELECT COUNT(e) > 0
+                FROM EndUser e
+                JOIN e.workspaces w
+                WHERE e.id = :endUserId AND w.id = :workspaceId
+            """)
+    boolean isLinkedToWorkspace(
+            @Param("endUserId") UUID endUserId,
+            @Param("workspaceId") UUID workspaceId
+    );
 
     @Query("""
                 SELECT COUNT(e)

@@ -18,6 +18,9 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class PolarWebhookService {
 
+    private static final org.slf4j.Logger log =
+            org.slf4j.LoggerFactory.getLogger(PolarWebhookService.class);
+
     private final ObjectMapper objectMapper;
     private final PolarWebhookEventRepository eventRepository;
     private final SubscriptionRepository subscriptionRepository;
@@ -30,7 +33,7 @@ public class PolarWebhookService {
             String rawBody
     ) {
 
-        System.out.println("WEBHOOK PROCESSING..." + rawBody);
+        log.info("Processing Polar webhook {}", webhookId);
 
         try {
             if (webhookId == null || webhookId.isBlank()) {
@@ -90,11 +93,11 @@ public class PolarWebhookService {
                 case "order.paid" ->
                         handlePaidOrder(data);
 
+                case "order.refunded" ->
+                        handleRefundedOrder(data);
+
                 default ->
-                        System.out.println(
-                                "Ignoring Polar event: "
-                                        + eventType
-                        );
+                        log.info("Ignoring Polar event type {}", eventType);
             }
 
             /*
@@ -177,6 +180,45 @@ public class PolarWebhookService {
 
             subscription.setWorkspaceId(workspaceId);
         }
+
+        /*
+         * Ignore stale / out-of-order deliveries: Polar does not guarantee
+         * ordering, so an older event must never overwrite newer state.
+         */
+        Instant modifiedAt =
+                parseInstant(data.path("modified_at").asText(null));
+
+        if (modifiedAt != null
+                && subscription.getProviderModifiedAt() != null
+                && modifiedAt.isBefore(subscription.getProviderModifiedAt())) {
+
+            log.info(
+                    "Ignoring stale Polar {} event for subscription {}",
+                    eventType,
+                    providerSubscriptionId
+            );
+
+            return;
+        }
+
+        /*
+         * A Lifetime entitlement is never replaced by a recurring
+         * subscription event.
+         */
+        if (subscription.getId() != null
+                && subscription.getPlan() == BillingPlan.LIFETIME
+                && subscription.getStatus() == SubscriptionStatus.ACTIVE
+                && plan != BillingPlan.LIFETIME) {
+
+            log.info(
+                    "Ignoring recurring Polar {} event for a Lifetime workspace",
+                    eventType
+            );
+
+            return;
+        }
+
+        subscription.setProviderModifiedAt(modifiedAt);
 
         subscription.setProviderCustomerId(customerId);
 
@@ -475,6 +517,37 @@ public class PolarWebhookService {
                 revenueAmountMinor,
                 currency
         );
+    }
+
+    /**
+     * Business rule (documented in DATABASE_AND_MIGRATIONS.md / SECURITY audit):
+     * a fully refunded Lifetime purchase revokes the entitlement. Refunds of
+     * recurring orders do not change access by themselves; access follows the
+     * subscription.* events Polar sends (e.g. subscription.revoked).
+     */
+    private void handleRefundedOrder(JsonNode data) {
+
+        String orderId = data.path("id").asText(null);
+
+        if (orderId == null || orderId.isBlank()) {
+            throw new IllegalArgumentException("Missing Polar order ID");
+        }
+
+        String status = data.path("status").asText("");
+
+        if (!"refunded".equalsIgnoreCase(status)) {
+            log.info("Order {} is not fully refunded (status={}); access unchanged", orderId, status);
+            return;
+        }
+
+        subscriptionRepository
+                .findByProviderTransactionId(orderId)
+                .filter(sub -> sub.getPlan() == BillingPlan.LIFETIME)
+                .ifPresent(sub -> {
+                    sub.setStatus(SubscriptionStatus.CANCELED);
+                    subscriptionRepository.save(sub);
+                    log.info("Lifetime entitlement revoked after refund of order {}", orderId);
+                });
     }
 
     private UUID extractWorkspaceId(JsonNode data) {

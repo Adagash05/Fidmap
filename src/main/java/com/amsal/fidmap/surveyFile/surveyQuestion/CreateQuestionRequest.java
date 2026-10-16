@@ -6,5 +6,6 @@ public record CreateQuestionRequest(
         String question,
         QuestionType type,
         Integer position,
-        List<String> options
+        List<String> options,
+        Boolean required
 ) {}

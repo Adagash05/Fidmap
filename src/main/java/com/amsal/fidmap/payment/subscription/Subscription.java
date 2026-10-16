@@ -156,6 +156,13 @@ public class Subscription {
     private Instant trialEndsAt;
 
     /**
+     * Provider-side "modified_at" of the last subscription event applied.
+     * Used to ignore stale / out-of-order webhook deliveries.
+     */
+    @Column(name = "provider_modified_at")
+    private Instant providerModifiedAt;
+
+    /**
      * Record creation timestamp.
      */
     @Column(

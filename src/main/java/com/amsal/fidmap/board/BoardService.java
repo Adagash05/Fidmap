@@ -6,6 +6,7 @@ import com.amsal.fidmap.exception.UserNotFoundException;
 import com.amsal.fidmap.exception.WorkspaceNotFoundException;
 import com.amsal.fidmap.payment.billing.PlanEntitlementService;
 import com.amsal.fidmap.security.SecurityUtils;
+import com.amsal.fidmap.security.WorkspaceAuthorizationService;
 import com.amsal.fidmap.user.User;
 import com.amsal.fidmap.user.UserRepository;
 import com.amsal.fidmap.workspace.Workspace;
@@ -27,10 +28,13 @@ public class BoardService implements IBoardService {
     private final WorkspaceRepository workspaceRepository;
     private final BoardMapper boardMapper;
     private final PlanEntitlementService planEntitlementService;
+    private final WorkspaceAuthorizationService workspaceAuthorizationService;
 
     @Transactional
     @Override
     public ApiResponse<BoardDto> createBoard(BoardDto boardDto, UUID workspaceId) {
+
+        workspaceAuthorizationService.requireStaffWrite(workspaceId);
 
         UUID userId = SecurityUtils.getCurrentUserId();
         User user = userRepository.findUserById(userId);
@@ -65,6 +69,8 @@ public class BoardService implements IBoardService {
     @Transactional(readOnly = true)
     @Override
     public ApiResponse<List<BoardDto>> getAllBoardsByWorkspace(UUID workspaceId) {
+
+        workspaceAuthorizationService.requireStaff(workspaceId);
 
         Workspace workspace = workspaceRepository.findWorkspaceById(workspaceId);
         if (workspace == null ) {
@@ -113,6 +119,8 @@ public class BoardService implements IBoardService {
             throw new BoardNotFoundException("this board is not found,please try again later");
         }
 
+        requirePublicOrStaff(board);
+
         BoardDto dto = boardMapper.toBoardDto(board);
 
         return ApiResponse.success("board is found successfully", dto);
@@ -125,6 +133,13 @@ public class BoardService implements IBoardService {
         Board board =  boardRepository.findBoardById(boardId);
         if (board == null) {
             throw new BoardNotFoundException("this board is not found,please try again later");
+        }
+
+        UUID boardWorkspaceId = board.getWorkspace().getId();
+        workspaceAuthorizationService.requireStaffWrite(boardWorkspaceId);
+
+        if (Boolean.FALSE.equals(request.getIsPublic())) {
+            planEntitlementService.requirePrivateBoards(boardWorkspaceId);
         }
 
         board.setName(request.getName());
@@ -153,6 +168,13 @@ public class BoardService implements IBoardService {
             throw new BoardNotFoundException("this board is not found,please try again later");
         }
 
+        UUID boardWorkspaceId = board.getWorkspace().getId();
+        workspaceAuthorizationService.requireStaffWrite(boardWorkspaceId);
+
+        if (!isPublic) {
+            planEntitlementService.requirePrivateBoards(boardWorkspaceId);
+        }
+
         board.setIsPublic(isPublic);
 
         Board saveBoard = boardRepository.save(board);
@@ -172,10 +194,25 @@ public class BoardService implements IBoardService {
         }
 
 
+        // Deletion stays allowed for lapsed workspaces so customers can reduce usage.
+        workspaceAuthorizationService.requireStaff(board.getWorkspace().getId());
+
         boardRepository.deleteBoardById(boardId);
 
         return ApiResponse.success("board is deleted successfully", null);
 
 
+    }
+
+    /**
+     * Private boards are visible only to staff of the owning workspace.
+     * Anyone else gets the same "not found" as a missing board.
+     */
+    private void requirePublicOrStaff(Board board) {
+
+        if (Boolean.FALSE.equals(board.getIsPublic())
+                && !workspaceAuthorizationService.isStaffOf(board.getWorkspace().getId())) {
+            throw new BoardNotFoundException("this board is not found,please try again later");
+        }
     }
 }

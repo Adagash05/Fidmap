@@ -37,6 +37,14 @@ public class FeedbackMapper {
             dto.setEndUserName(post.getEndUser().getName());
         }
 
+        if (post.getMergedInto() != null) {
+            dto.setMergedIntoId(post.getMergedInto().getId());
+        }
+
+        if (post.getBoard() != null) {
+            dto.setBoardId(post.getBoard().getId());
+        }
+
         if (post.getRoadMapItem() != null) {
             dto.setRoadmapItemId(post.getRoadMapItem().getId());
         }

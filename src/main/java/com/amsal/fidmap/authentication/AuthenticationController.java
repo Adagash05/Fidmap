@@ -46,12 +46,13 @@ public class AuthenticationController {
     //might delete this later
     @PostMapping("/personal-register")
     public ResponseEntity<ApiResponse<AuthenticationResponse>> register(
-            @RequestBody RegisterRequest request
+            @RequestBody RegisterRequest request,
+            @RequestHeader(value = "X-Bootstrap-Token", required = false) String bootstrapToken
     ) {
-        //admin
+        // Restricted: see AuthenticationService.registerSuperAdmin
         return ResponseEntity
                 .status(OK)
-                .body(authenticationService.registerSuperAdmin(request));
+                .body(authenticationService.registerSuperAdmin(request, bootstrapToken));
     }
 
     @PostMapping(value = "/log-in", produces = MediaType.APPLICATION_JSON_VALUE)

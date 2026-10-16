@@ -41,33 +41,38 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         String jwt = authHeader.substring(7);
-        String userEmail = jwtService.extractUserName(jwt);
 
-        if (userEmail != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+        try {
 
-            UserDetails userDetails = userService.loadUserByUsername(userEmail);
+            String userEmail = jwtService.extractUserName(jwt);
 
-            boolean jwtValid = jwtService.isTokenValid(jwt, userDetails);
+            if (userEmail != null && SecurityContextHolder.getContext().getAuthentication() == null) {
 
-            boolean databaseTokenValid = tokenRepository.findByToken(jwt)
-                            .map(token -> !token.isExpired() && !token.isRevoked())
-                            .orElse(false);
+                UserDetails userDetails = userService.loadUserByUsername(userEmail);
 
-            System.out.println("JWT valid: " + jwtValid);
-            System.out.println("Database token valid: " + databaseTokenValid);
+                boolean jwtValid = jwtService.isTokenValid(jwt, userDetails);
 
+                boolean databaseTokenValid = tokenRepository.findByToken(jwt)
+                        .map(token -> !token.isExpired() && !token.isRevoked())
+                        .orElse(false);
 
-            if (jwtValid && databaseTokenValid) {
-                UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
-                                userDetails,
-                                null,
-                                userDetails.getAuthorities()
-                        );
+                if (jwtValid && databaseTokenValid) {
+                    UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
+                            userDetails,
+                            null,
+                            userDetails.getAuthorities()
+                    );
 
-                authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                    authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
 
-                SecurityContextHolder.getContext().setAuthentication(authToken);
+                    SecurityContextHolder.getContext().setAuthentication(authToken);
+                }
             }
+
+        } catch (RuntimeException e) {
+            // Expired / malformed / unknown-user token: continue as anonymous so
+            // public endpoints keep working and protected ones answer 401.
+            SecurityContextHolder.clearContext();
         }
 
         filterChain.doFilter(request, response);

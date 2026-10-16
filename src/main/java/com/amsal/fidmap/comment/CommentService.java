@@ -3,6 +3,11 @@ package com.amsal.fidmap.comment;
 import com.amsal.fidmap.apiResponse.ApiResponse;
 import com.amsal.fidmap.endUser.EndUser;
 import com.amsal.fidmap.endUser.EndUserRepository;
+import com.amsal.fidmap.endUser.EndUserResolver;
+import com.amsal.fidmap.exception.BoardNotFoundException;
+import com.amsal.fidmap.notification.NotificationService;
+import com.amsal.fidmap.payment.billing.PlanEntitlementService;
+import com.amsal.fidmap.security.WorkspaceAuthorizationService;
 import com.amsal.fidmap.exception.EndUserException;
 import com.amsal.fidmap.exception.FeedbackPostNotFoundException;
 import com.amsal.fidmap.feedbackPost.FeedbackPost;
@@ -23,6 +28,10 @@ public class CommentService implements ICommentService {
     private final FeedbackPostRepository feedbackPostRepository;
     private final EndUserRepository endUserRepository;
     private final CommentMapper commentMapper;
+    private final EndUserResolver endUserResolver;
+    private final PlanEntitlementService planEntitlementService;
+    private final WorkspaceAuthorizationService workspaceAuthorizationService;
+    private final NotificationService notificationService;
 
     @Override
     @Transactional
@@ -40,60 +49,39 @@ public class CommentService implements ICommentService {
             );
         }
 
-        /*
-         * Find the EndUser by email.
-         *
-         * If the visitor already exists, reuse the existing
-         * EndUser instead of creating another one.
-         *
-         * If the visitor does not exist, create a new EndUser.
-         */
-        EndUser endUser =
-                endUserRepository.findEndUserByEmail(
-                        addComment.getEndUser().getEmail()
-                );
+        requirePublicOrStaff(post);
 
-        if (endUser == null) {
-
-            endUser = new EndUser();
-
-            endUser.setName(
-                    addComment.getEndUser().getName()
-            );
-
-            endUser.setEmail(
-                    addComment.getEndUser().getEmail()
-            );
-
-            endUser = endUserRepository.save(endUser);
-
-        } else {
-
-            /*
-             * Keep the existing EndUser.
-             *
-             * Do not create another EndUser with the same email.
-             */
+        if (addComment == null || addComment.getEndUser() == null) {
+            throw new IllegalArgumentException("Your name and email are required");
         }
+
+        String message = addComment.getMessage() == null ? "" : addComment.getMessage().trim();
+
+        if (message.isEmpty() || message.length() > 2000) {
+            throw new IllegalArgumentException("A comment must be between 1 and 2000 characters");
+        }
+
+        planEntitlementService.requireActiveAccess(post.getWorkspace().getId());
+
+        EndUser endUser = endUserResolver.resolve(
+                post.getWorkspace(),
+                addComment.getEndUser().getName(),
+                addComment.getEndUser().getEmail()
+        );
 
         Comment comment = new Comment();
 
-        comment.setMessage(addComment.getMessage());
+        comment.setMessage(message);
         comment.setFeedbackPost(post);
         comment.setEndUser(endUser);
         comment.setWorkspace(post.getWorkspace());
         comment.setCreatedAt(LocalDate.now());
 
-        Comment savedComment =
-                commentRepository.save(comment);
+        Comment savedComment = commentRepository.save(comment);
 
-        CommentDto dto =
-                commentMapper.toCommentDto(savedComment);
+        notificationService.follow(post, endUser);
 
-        return ApiResponse.success(
-                "comment added",
-                dto
-        );
+        return ApiResponse.success("comment added", commentMapper.toCommentDto(savedComment));
     }
 
     @Override
@@ -110,6 +98,8 @@ public class CommentService implements ICommentService {
                     "post is not found please try again later"
             );
         }
+
+        requirePublicOrStaff(post);
 
         List<CommentDto> dtos =
                 commentRepository
@@ -150,10 +140,16 @@ public class CommentService implements ICommentService {
         }
 
         /*
-         * Only the EndUser who owns the comment should be able
-         * to delete it.
+         * Only the EndUser who owns the comment, or staff of the workspace
+         * the comment belongs to, may delete it.
          */
-        if (!comment.getEndUser().getId().equals(endUserId)) {
+        boolean owner = comment.getEndUser() != null
+                && comment.getEndUser().getId().equals(endUserId);
+
+        boolean staff = comment.getWorkspace() != null
+                && workspaceAuthorizationService.isStaffOf(comment.getWorkspace().getId());
+
+        if (!owner && !staff) {
             throw new EndUserException(
                     "you are not allowed to delete this comment"
             );
@@ -162,5 +158,15 @@ public class CommentService implements ICommentService {
         commentRepository.delete(comment);
 
     }
-}
 
+    private void requirePublicOrStaff(FeedbackPost post) {
+
+        if (post.getBoard() != null
+                && Boolean.FALSE.equals(post.getBoard().getIsPublic())
+                && !workspaceAuthorizationService.isStaffOf(post.getWorkspace().getId())) {
+            throw new FeedbackPostNotFoundException(
+                    "post is not found please try again later"
+            );
+        }
+    }
+}

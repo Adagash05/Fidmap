@@ -25,5 +25,9 @@ public class FeedbackDto {
     private UUID roadmapItemId;
 
     private LocalDate createdAt;
+
+    private UUID mergedIntoId;
+
+    private UUID boardId;
 }
 

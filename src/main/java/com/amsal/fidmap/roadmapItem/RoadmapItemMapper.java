@@ -3,6 +3,7 @@ package com.amsal.fidmap.roadmapItem;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
+import java.util.List;
 
 @Service
 public class RoadmapItemMapper {
@@ -14,7 +15,7 @@ public class RoadmapItemMapper {
         item.setTitle(request.getTitle());
         item.setDescription(request.getDescription());
         item.setTargetDate(request.getTargetDate());
-        item.setStatus(request.getStatus());
+        item.setStatus(request.getStatus() == null ? RoadMapStatus.PLANNED : request.getStatus());
         item.setCreatedAt(LocalDate.now());
 
         return item;
@@ -31,8 +32,14 @@ public class RoadmapItemMapper {
         dto.setStatus(item.getStatus());
         dto.setCreatedAt(item.getCreatedAt());
 
+        List<com.amsal.fidmap.feedbackPost.FeedbackPost> linked = item.getFeedbackPost();
+
+        dto.setFeedbackPostIds(
+                linked == null
+                        ? List.of()
+                        : linked.stream().map(com.amsal.fidmap.feedbackPost.FeedbackPost::getId).toList()
+        );
 
         return dto;
     }
 }
-

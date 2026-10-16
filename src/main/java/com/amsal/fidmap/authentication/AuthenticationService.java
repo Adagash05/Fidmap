@@ -3,7 +3,12 @@ package com.amsal.fidmap.authentication;
 //import com.fasterxml.jackson.databind.ObjectMapper;
 
 import com.amsal.fidmap.apiResponse.ApiResponse;
+import com.amsal.fidmap.config.FidmapConfig;
+import com.amsal.fidmap.exception.UserAlreadyExistsException;
 import com.amsal.fidmap.exception.UserNotFoundException;
+import com.amsal.fidmap.security.SecurityUtils;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.BadCredentialsException;
 import com.amsal.fidmap.jwt.JwtService;
 import com.amsal.fidmap.referral.ReferralService;
 import com.amsal.fidmap.token.Token;
@@ -23,6 +28,10 @@ import org.springframework.stereotype.Service;
 import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.UUID;
+import java.util.regex.Pattern;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -43,6 +52,28 @@ public class AuthenticationService {
     private final UserMapper userMapper;
     private final WorkspaceService workspaceService;
     private final ReferralService referralService;
+    private final FidmapConfig fidmapConfig;
+
+    private static final Pattern EMAIL = Pattern.compile("^[^\\s@]{1,64}@[^\\s@]{1,190}\\.[^\\s@]{2,}$");
+    private static final int MIN_PASSWORD_LENGTH = 8;
+
+    private static String requireEmail(String email) {
+
+        if (email == null || !EMAIL.matcher(email.trim()).matches() || email.trim().length() > 254) {
+            throw new IllegalArgumentException("A valid email address is required");
+        }
+
+        return email.trim().toLowerCase();
+    }
+
+    private static void requirePassword(String password) {
+
+        if (password == null || password.length() < MIN_PASSWORD_LENGTH || password.length() > 128) {
+            throw new IllegalArgumentException(
+                    "Password must be between " + MIN_PASSWORD_LENGTH + " and 128 characters"
+            );
+        }
+    }
 
 
     /*
@@ -53,8 +84,24 @@ public class AuthenticationService {
     public ApiResponse<UserDto> createFirstUserAndWorkspace(AddFirstUser firstUser, WorkspaceDto workspaceDto) {
 
 
-        if (userRepository.existsByEmail(firstUser.getEmail())) {
-            throw new UserNotFoundException("this user already exist");
+        if (firstUser == null || workspaceDto == null) {
+            throw new IllegalArgumentException("Account and workspace details are required");
+        }
+
+        firstUser.setEmail(requireEmail(firstUser.getEmail()));
+        requirePassword(firstUser.getPassword());
+
+        if (firstUser.getFullName() == null || firstUser.getFullName().isBlank()) {
+            throw new IllegalArgumentException("Your name is required");
+        }
+
+        if (workspaceDto.getName() == null || workspaceDto.getName().isBlank()
+                || workspaceDto.getName().trim().length() > 100) {
+            throw new IllegalArgumentException("A workspace name (max 100 characters) is required");
+        }
+
+        if (userRepository.existsByEmailIgnoreCase(firstUser.getEmail())) {
+            throw new UserAlreadyExistsException("this user already exist");
         }
 
 
@@ -97,28 +144,50 @@ public class AuthenticationService {
     }
 
 
-    public ApiResponse<AuthenticationResponse> registerSuperAdmin(RegisterRequest request) {
+    /**
+     * Creating a platform super admin is NEVER open to the public.
+     *
+     * Allowed only when (a) the caller is already a SUPER_ADMIN, or (b) no super
+     * admin exists yet and the caller presents the one-time bootstrap secret
+     * configured in fidmap.admin-bootstrap-token.
+     */
+    public ApiResponse<AuthenticationResponse> registerSuperAdmin(RegisterRequest request, String bootstrapToken) {
 
+        UUID callerId = SecurityUtils.getCurrentUserIdOrNull();
 
-//        var user = User
-//                .builder()
-//                .firstName(request.getFirstName())
-//                .lastName(request.getLastName())
-//                .email(request.getEmail())
-//                .password(passwordEncoder.encode(request.getPassword()))
-////                .date(OffsetDateTime.now())
-//                .build();
+        boolean callerIsSuperAdmin = callerId != null
+                && userRepository.findById(callerId)
+                .map(u -> u.getRole() == SUPER_ADMIN)
+                .orElse(false);
 
+        if (!callerIsSuperAdmin) {
 
-        User checkUser = userRepository.findUserByEmail(request.getEmail());
-        if (checkUser != null) {
-            throw new UserNotFoundException("user with the email: " + request.getEmail() + " already exist,please check the email and try again");
+            String configured = fidmapConfig.getAdminBootstrapToken();
+
+            boolean bootstrapAllowed = configured != null
+                    && !configured.isBlank()
+                    && !userRepository.existsByRole(SUPER_ADMIN)
+                    && bootstrapToken != null
+                    && MessageDigest.isEqual(
+                    configured.getBytes(StandardCharsets.UTF_8),
+                    bootstrapToken.getBytes(StandardCharsets.UTF_8)
+            );
+
+            if (!bootstrapAllowed) {
+                throw new AccessDeniedException("You are not allowed to create administrator accounts");
+            }
         }
 
+        String email = requireEmail(request.getEmail());
+        requirePassword(request.getPassword());
+
+        if (userRepository.existsByEmailIgnoreCase(email)) {
+            throw new UserAlreadyExistsException("A user with this email already exists");
+        }
 
         User newUser = new User();
         newUser.setFullName(request.getFullName());
-        newUser.setEmail(request.getEmail());
+        newUser.setEmail(email);
         newUser.setPassword(passwordEncoder.encode(request.getPassword()));
         newUser.setRole(SUPER_ADMIN);
 
@@ -158,14 +227,16 @@ public class AuthenticationService {
         or wait until the refresh token expires usually after 24 hours
         */
 
-        var checkUser = userRepository.findUserByEmail(request.getEmail());
-        if (checkUser == null) {
-
-            throw new UserNotFoundException("user not found");
+        if (request == null || request.getEmail() == null || request.getPassword() == null) {
+            throw new BadCredentialsException("Invalid email or password");
         }
 
+        // Same generic failure for unknown email and wrong password (no user enumeration).
+        var checkUser = userRepository.findByEmailIgnoreCase(request.getEmail().trim()).orElse(null);
+        if (checkUser == null) {
 
-        var validTokens = tokenRepository.findAllValidTokensByUser(checkUser.getId());
+            throw new BadCredentialsException("Invalid email or password");
+        }
 
 //        if (!validTokens.isEmpty()) {
 //            throw new RuntimeException("this user is already logged in another device,you can either log out or try again after 24 hours");
@@ -173,16 +244,12 @@ public class AuthenticationService {
 
         authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(
-                        request.getEmail(),
+                        checkUser.getEmail(),
                         request.getPassword()
                 )
         );
 
-        var user = userRepository.findUserByEmail(request.getEmail());
-        if (user == null) {
-
-            throw new UserNotFoundException("user not found");
-        }
+        var user = checkUser;
 
         Map<String, Object> extraClaims = new HashMap<>();
         extraClaims.put("userId", user.getId());

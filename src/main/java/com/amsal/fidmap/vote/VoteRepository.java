@@ -20,6 +20,12 @@ public interface VoteRepository extends JpaRepository<Vote,Long> {
     Optional<Vote> findByFeedbackPostIdAndEndUserId(UUID feedbackPostId, UUID endUserId );
     long countByFeedbackPostId(UUID feedbackPostId);
 
+    @Query("SELECT v.endUser.id FROM Vote v WHERE v.feedbackPost.id = :postId")
+    List<UUID> findVoterIds(@Param("postId") UUID postId);
+
+    @Query("SELECT v FROM Vote v WHERE v.feedbackPost.id = :postId")
+    List<Vote> findAllByPostId(@Param("postId") UUID postId);
+
     @Query("""
     SELECT new com.amsal.fidmap.vote.BoardVoteStatusDto(
         fp.id,
@@ -29,7 +35,7 @@ public interface VoteRepository extends JpaRepository<Vote,Long> {
     FROM FeedbackPost fp
     LEFT JOIN Vote v
         ON v.feedbackPost = fp
-        AND v.endUser.email = :endUserEmail
+        AND LOWER(v.endUser.email) = :endUserEmail
     WHERE fp.board.id = :boardId
     GROUP BY fp.id, fp.voteCount
     ORDER BY fp.id

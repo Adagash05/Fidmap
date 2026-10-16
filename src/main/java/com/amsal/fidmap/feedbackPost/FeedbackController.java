@@ -41,6 +41,21 @@ public class FeedbackController {
 
     }
 
+    @GetMapping("/{board-id}/page")
+    public ResponseEntity<ApiResponse<com.amsal.fidmap.common.PageResponse<FeedbackDto>>> searchFeedbackByBoard(
+            @PathVariable("board-id") UUID boardId,
+            @RequestParam(value = "page", required = false) Integer page,
+            @RequestParam(value = "size", required = false) Integer size,
+            @RequestParam(value = "sort", required = false) String sort,
+            @RequestParam(value = "status", required = false) FeedbackStatus status,
+            @RequestParam(value = "q", required = false) String query
+    ) {
+
+        return ResponseEntity
+                .status(OK)
+                .body(feedbackService.searchFeedbackByBoard(boardId, page, size, sort, status, query));
+    }
+
     @GetMapping("/{board-id}/feedback/{feedback-id}")
     public ResponseEntity<ApiResponse<FeedbackDto>> getFeedbackById(
             @PathVariable("board-id") UUID boardId,

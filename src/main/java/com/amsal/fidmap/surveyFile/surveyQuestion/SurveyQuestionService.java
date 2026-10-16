@@ -1,117 +1,142 @@
 package com.amsal.fidmap.surveyFile.surveyQuestion;
 
 import com.amsal.fidmap.apiResponse.ApiResponse;
+import com.amsal.fidmap.exception.SurveyNotFoundException;
+import com.amsal.fidmap.security.WorkspaceAuthorizationService;
 import com.amsal.fidmap.surveyFile.survey.Survey;
+import com.amsal.fidmap.surveyFile.survey.SurveyMapper;
 import com.amsal.fidmap.surveyFile.survey.SurveyRepository;
 import com.amsal.fidmap.surveyFile.survey.SurveyStatus;
+import com.amsal.fidmap.surveyFile.survey.SurveyValidator;
 import com.amsal.fidmap.surveyFile.surveyOption.SurveyOption;
-import com.amsal.fidmap.surveyFile.surveyOption.SurveyOptionDto;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
 @Service
 @RequiredArgsConstructor
 @Transactional
-public class SurveyQuestionService
-        implements ISurveyQuestionService {
+public class SurveyQuestionService implements ISurveyQuestionService {
 
     private final SurveyRepository surveyRepository;
     private final SurveyQuestionRepository questionRepository;
+    private final WorkspaceAuthorizationService workspaceAuthorizationService;
 
     @Override
     public ApiResponse<SurveyQuestionDto> addQuestion(Long surveyId, CreateQuestionRequest request) {
 
         Survey survey = surveyRepository.findById(surveyId)
-                .orElseThrow(() -> new RuntimeException("Survey not found"));
+                .orElseThrow(() -> new SurveyNotFoundException("Survey not found"));
 
-        if (survey.getStatus() == SurveyStatus.PUBLISHED) {
-            throw new IllegalStateException(
-                    "Cannot add questions to a published survey"
-            );
+        workspaceAuthorizationService.requireStaffWrite(survey.getWorkspace().getId());
+        requireDraft(survey, "add questions to");
+
+        SurveyValidator.validateQuestion(request.question(), request.type(), request.options());
+
+        if (survey.getQuestions().size() >= SurveyValidator.MAX_QUESTIONS) {
+            throw new IllegalArgumentException(
+                    "A survey can have at most " + SurveyValidator.MAX_QUESTIONS + " questions");
         }
 
         SurveyQuestion question = SurveyQuestion.builder()
-                .question(request.question())
+                .question(request.question().trim())
                 .type(request.type())
-                .position(request.position())
+                .position(request.position() == null ? survey.getQuestions().size() : request.position())
+                .required(Boolean.TRUE.equals(request.required()))
                 .survey(survey)
                 .build();
 
-        if (request.options() != null) {
+        replaceOptions(question, request.options());
+        survey.getQuestions().add(question);
 
-            int position = 0;
+        SurveyQuestion saved = questionRepository.save(question);
 
-            for (String value : request.options()) {
-
-                SurveyOption option = SurveyOption.builder()
-                        .value(value)
-                        .position(position++)
-                        .question(question)
-                        .build();
-
-                question.getOptions().add(option);
-            }
-        }
-
-        SurveyQuestion saved =
-                questionRepository.save(question);
-
-        return ApiResponse.success("Question added successfully", mapToDto(saved));
+        return ApiResponse.success("Question added successfully", SurveyMapper.toDto(saved));
     }
 
     @Override
     public ApiResponse<SurveyQuestionDto> updateQuestion(Long questionId, UpdateQuestionRequest request) {
 
-        SurveyQuestion question = questionRepository.findById(questionId)
-                        .orElseThrow(() -> new RuntimeException("Question not found"));
+        SurveyQuestion question = load(questionId);
 
-        if (question.getSurvey().getStatus() == SurveyStatus.PUBLISHED) {
+        workspaceAuthorizationService.requireStaffWrite(question.getSurvey().getWorkspace().getId());
+        requireDraft(question.getSurvey(), "update questions in");
 
-            throw new IllegalStateException("Cannot update a question in a published survey");
+        String text = request.question() != null ? request.question() : question.getQuestion();
+        QuestionType type = request.type() != null ? request.type() : question.getType();
+
+        List<String> options = request.options() != null
+                ? request.options()
+                : question.getOptions().stream().map(SurveyOption::getValue).toList();
+
+        // Switching to a non-choice type drops stale options.
+        if (type != QuestionType.SINGLE_CHOICE && type != QuestionType.MULTIPLE_CHOICE
+                && request.options() == null) {
+            options = List.of();
         }
 
-        question.setQuestion(request.question());
-        question.setType(request.type());
-        question.setPosition(request.position());
+        SurveyValidator.validateQuestion(text, type, options);
 
-        return ApiResponse.success("Question updated successfully", mapToDto(question));
+        question.setQuestion(text.trim());
+        question.setType(type);
+
+        if (request.position() != null) {
+            question.setPosition(request.position());
+        }
+
+        if (request.required() != null) {
+            question.setRequired(request.required());
+        }
+
+        if (request.options() != null || options.isEmpty()) {
+            replaceOptions(question, options);
+        }
+
+        return ApiResponse.success("Question updated successfully", SurveyMapper.toDto(question));
     }
 
     @Override
     public ApiResponse<Void> deleteQuestion(Long questionId) {
 
-        SurveyQuestion question = questionRepository.findById(questionId)
-                        .orElseThrow(() ->
-                                new RuntimeException("Question not found"));
+        SurveyQuestion question = load(questionId);
 
-        if (question.getSurvey().getStatus() == SurveyStatus.PUBLISHED) {
+        workspaceAuthorizationService.requireStaffWrite(question.getSurvey().getWorkspace().getId());
+        requireDraft(question.getSurvey(), "delete questions from");
 
-            throw new IllegalStateException("Cannot delete a question from a published survey");
-        }
-
+        question.getSurvey().getQuestions().remove(question);
         questionRepository.delete(question);
 
         return ApiResponse.success("Question deleted successfully", null);
     }
 
-    private SurveyQuestionDto mapToDto(SurveyQuestion question) {
+    private SurveyQuestion load(Long id) {
+        return questionRepository.findById(id)
+                .orElseThrow(() -> new SurveyNotFoundException("Question not found"));
+    }
 
-        return new SurveyQuestionDto(
-                question.getId(),
-                question.getQuestion(),
-                question.getType(),
-                question.getPosition(),
-                question.getOptions()
-                        .stream()
-                        .map(option ->
-                                new SurveyOptionDto(
-                                        option.getId(),
-                                        option.getValue(),
-                                        option.getPosition()
-                                )
-                        )
-                        .toList()
-        );
+    private void requireDraft(Survey survey, String verb) {
+        if (survey.getStatus() != SurveyStatus.DRAFT) {
+            throw new IllegalStateException("Cannot " + verb + " a survey that is not a draft");
+        }
+    }
+
+    private void replaceOptions(SurveyQuestion question, List<String> values) {
+
+        question.getOptions().clear();
+
+        if (values == null) {
+            return;
+        }
+
+        int position = 0;
+
+        for (String value : values) {
+            question.addOption(SurveyOption.builder()
+                    .value(value.trim())
+                    .position(position++)
+                    .build());
+        }
     }
 }

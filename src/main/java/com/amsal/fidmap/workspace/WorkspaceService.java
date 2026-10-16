@@ -5,6 +5,7 @@ import com.amsal.fidmap.exception.WorkspaceNotFoundException;
 import com.amsal.fidmap.payment.billing.BillingService;
 import com.amsal.fidmap.roadmap.Roadmap;
 import com.amsal.fidmap.roadmap.RoadmapRepository;
+import com.amsal.fidmap.security.WorkspaceAuthorizationService;
 import com.amsal.fidmap.user.User;
 import com.amsal.fidmap.user.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +23,7 @@ public class WorkspaceService implements IWorkspaceService {
     private final RoadmapRepository roadmapRepository;
     private final WorkspaceSlugGenerator workspaceSlugGenerator;
     private final BillingService billingService;
+    private final WorkspaceAuthorizationService workspaceAuthorizationService;
 
 
     @Override
@@ -57,6 +59,9 @@ public class WorkspaceService implements IWorkspaceService {
     @Transactional(readOnly = true)
     @Override
     public ApiResponse<WorkspaceDto> getWorkspace(UUID workspaceId) {
+
+        // Only members of the workspace may read it by id (public access is by slug).
+        workspaceAuthorizationService.requireWorkspaceAccess(workspaceId);
 
         Workspace workspace = workspaceRepository.findWorkspaceById(workspaceId);
         if (workspace == null) {

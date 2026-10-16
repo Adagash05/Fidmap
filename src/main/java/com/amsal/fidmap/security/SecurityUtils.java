@@ -21,6 +21,28 @@ public final class SecurityUtils {
     /* get the username/email */
 
 
+    /**
+     * Like getCurrentUserId() but returns null for anonymous / unauthenticated
+     * requests instead of throwing. Use on endpoints that are public but expose
+     * more to signed-in staff.
+     */
+    public static UUID getCurrentUserIdOrNull() {
+
+        Authentication authentication = getAuthentication();
+
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return null;
+        }
+
+        Object principal = authentication.getPrincipal();
+
+        if (principal instanceof User user) {
+            return user.getId();
+        }
+
+        return null;
+    }
+
     public static UUID getCurrentUserId() {
 
         Authentication authentication = getAuthentication();

@@ -5,14 +5,11 @@ import com.amsal.fidmap.surveyFile.surveyAnswer.SurveyAnswerDto;
 import java.time.LocalDateTime;
 import java.util.List;
 
-import java.time.LocalDateTime;
-import java.util.List;
-import java.util.UUID;
-
 public record SurveyResponseDto(
         Long id,
         Long surveyId,
-        UUID userId,
+        String respondentName,
+        String respondentEmail,
         LocalDateTime submittedAt,
         List<SurveyAnswerDto> answers
 ) {

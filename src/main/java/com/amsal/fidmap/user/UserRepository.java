@@ -20,6 +20,10 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     boolean existsByEmail(String email);
 
+    boolean existsByEmailIgnoreCase(String email);
+
+    boolean existsByRole(Role role);
+
     User findUserByEmail(String email);
 
     List<User> findAllByWorkspace(Workspace workspace);
@@ -29,6 +33,26 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     boolean existsByIdAndWorkspaceId(UUID userId, UUID workspaceId);
 
     boolean existsByEmailAndWorkspaceId(String email, UUID workspaceId);
+
+    @Query("""
+                SELECT COUNT(u)
+                FROM User u
+                WHERE u.workspace.id = :workspaceId AND u.role = :role
+            """)
+    long countByWorkspaceIdAndRole(
+            @Param("workspaceId") UUID workspaceId,
+            @Param("role") Role role
+    );
+
+    @Query("""
+                SELECT u
+                FROM User u
+                WHERE u.workspace.id = :workspaceId
+            """)
+    org.springframework.data.domain.Page<User> pageByWorkspaceId(
+            @Param("workspaceId") UUID workspaceId,
+            org.springframework.data.domain.Pageable pageable
+    );
 
     @Query("""
                 SELECT COUNT(u)

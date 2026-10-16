@@ -8,6 +8,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.time.Instant;
+
 @Getter
 @Setter
 @NoArgsConstructor
@@ -35,5 +37,7 @@ public class Vote {
     @JoinColumn(name = "end_user_id")
     private EndUser endUser;
 
-    //voteRepository.countByFeedbackPostId(10L);
+    /** Null for votes cast before this column existed. */
+    @Column(name = "created_at")
+    private Instant createdAt;
 }

@@ -1,6 +1,5 @@
 package com.amsal.fidmap.roadmapItem;
 
-import com.amsal.fidmap.feedbackPost.FeedbackPost;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -25,5 +24,6 @@ public class RoadmapItemDto {
 
     private LocalDate createdAt;
 
-//    private List<FeedbackPost> feedbackPost;
+    /** Requests linked to this item (traceability from decision to roadmap). */
+    private List<UUID> feedbackPostIds;
 }

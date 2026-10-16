@@ -12,4 +12,10 @@ import org.springframework.context.annotation.Configuration;
 public class FidmapConfig {
 
     private String frontendUrl;
+
+    /**
+     * One-time secret that allows creating the FIRST super admin when none exists
+     * (header X-Bootstrap-Token). Leave empty to disable bootstrap entirely.
+     */
+    private String adminBootstrapToken;
 }

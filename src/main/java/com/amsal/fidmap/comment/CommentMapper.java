@@ -14,8 +14,7 @@ public class CommentMapper {
         dto.setId(comment.getId());
         dto.setMessage(comment.getMessage());
         dto.setVotes(comment.getVotes());
-        dto.setEndUserName(comment.getEndUser().getName());
-        dto.setCreatedAt(LocalDate.now());
+        dto.setCreatedAt(comment.getCreatedAt());
 
         if (comment.getEndUser() != null) {
             dto.setEndUserName(comment.getEndUser().getName());

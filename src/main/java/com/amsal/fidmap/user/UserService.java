@@ -69,10 +69,16 @@ public class UserService implements UserDetailsService {
         }
         requireOwnerInWorkspace(currentUser, workspaceId);
 
-        if (userRepository.existsByEmailAndWorkspaceId(request.getEmail(), workspaceId)) {
-            throw new UserAlreadyExistsException("A user with this email already exists in this workspace");
+        String newEmail = normalizeEmail(request.getEmail());
+
+        // Login resolves users by email globally, so email must be globally unique.
+        if (userRepository.existsByEmailIgnoreCase(newEmail)) {
+            throw new UserAlreadyExistsException("A user with this email already exists");
         }
 
+        if (request.getPassword() == null || request.getPassword().length() < 8) {
+            throw new IllegalArgumentException("Password must be at least 8 characters");
+        }
 
         //Plan Limit check
         long currentUsers = userRepository.countByWorkspaceId(workspaceId);
@@ -82,7 +88,7 @@ public class UserService implements UserDetailsService {
         User newUser = new User();
         newUser.setWorkspace(currentUser.getWorkspace());
         newUser.setFullName(request.getFullName());
-        newUser.setEmail(request.getEmail());
+        newUser.setEmail(newEmail);
         newUser.setPassword(passwordEncoder.encode(request.getPassword()));
 
         // New users are members by default.
@@ -98,7 +104,7 @@ public class UserService implements UserDetailsService {
         if (currentUser == null) {
             throw new UserNotFoundException("user not found");
         }
-        requireOwnerInWorkspace(currentUser, workspaceId);
+        requireManagerInWorkspace(currentUser, workspaceId);
         List<UserDto> users = userRepository.findAllByWorkspace(currentUser.getWorkspace()).stream().map(userMapper::toUserDto).toList();
         return ApiResponse.success("retrieved all users in the workspace successfully", users);
     }
@@ -136,14 +142,31 @@ public class UserService implements UserDetailsService {
             throw new UserNotFoundException("user not found");
         } /* * CRITICAL: * * Never move a user between workspaces merely because * the caller supplied a user UUID. */
         requireSameWorkspace(currentUser, targetUser); /* * Only check email uniqueness if the email is actually * being changed. */
-        if (!targetUser.getEmail().equalsIgnoreCase(request.getEmail()) && userRepository.existsByEmailAndWorkspaceId(request.getEmail(), currentUser.getWorkspace().getId())) {
-            throw new UserAlreadyExistsException("A user with this email already exists in this workspace");
+        String editedEmail = normalizeEmail(request.getEmail());
+
+        if (!targetUser.getEmail().equalsIgnoreCase(editedEmail) && userRepository.existsByEmailIgnoreCase(editedEmail)) {
+            throw new UserAlreadyExistsException("A user with this email already exists");
         }
         targetUser.setFullName(request.getFullName());
-        targetUser.setEmail(request.getEmail()); /* * Role can be changed by the OWNER. */
-        if (request.getRole() != null) {
+        targetUser.setEmail(editedEmail);
+
+        if (request.getRole() != null && request.getRole() != targetUser.getRole()) {
+
+            // Workspace roles only: never SUPER_ADMIN / PARTNER (privilege escalation).
+            if (request.getRole() != Role.OWNER && request.getRole() != Role.ADMIN && request.getRole() != MEMBER) {
+                throw new AccessDeniedException("That role cannot be assigned");
+            }
+
+            // A workspace must always keep at least one owner.
+            if (targetUser.getRole() == Role.OWNER
+                    && userRepository.countByWorkspaceIdAndRole(currentUser.getWorkspace().getId(), Role.OWNER) <= 1) {
+                throw new IllegalStateException(
+                        "A workspace must keep at least one owner. Promote another owner first."
+                );
+            }
+
             targetUser.setRole(request.getRole());
-        } /* * IMPORTANT: * * Do NOT do this: * * targetUser.setWorkspace(currentUser.getWorkspace()); * * We already verified that both users belong to the * same workspace. */
+        }
         User savedUser = userRepository.save(targetUser);
         return ApiResponse.success("user updated successfully", userMapper.toUserDto(savedUser));
     }
@@ -167,6 +190,14 @@ public class UserService implements UserDetailsService {
         another workspace simply by knowing their UUID. */
 
         requireSameWorkspace(currentUser, targetUser);
+
+        if (targetUser.getRole() == Role.OWNER
+                && userRepository.countByWorkspaceIdAndRole(currentUser.getWorkspace().getId(), Role.OWNER) <= 1) {
+            throw new IllegalStateException(
+                    "The last owner of a workspace cannot be removed. Transfer ownership first."
+            );
+        }
+
         userRepository.delete(targetUser);
     }
 
@@ -186,8 +217,9 @@ public class UserService implements UserDetailsService {
             throw new UserNotFoundException("user not found");
         }
         String newEmail = request.getEmail().trim(); /* * Prevent changing to another user's email inside * the same workspace. */
-        if (!user.getEmail().equalsIgnoreCase(newEmail) && userRepository.existsByEmailAndWorkspaceId(newEmail, user.getWorkspace().getId())) {
-            throw new UserAlreadyExistsException("A user with this email already exists in this workspace");
+        newEmail = normalizeEmail(newEmail);
+        if (!user.getEmail().equalsIgnoreCase(newEmail) && userRepository.existsByEmailIgnoreCase(newEmail)) {
+            throw new UserAlreadyExistsException("A user with this email already exists");
         }
         user.setFullName(request.getFullName().trim());
         user.setEmail(newEmail);
@@ -204,6 +236,22 @@ public class UserService implements UserDetailsService {
         if (workspaceId == null || currentUser.getWorkspace() == null || !workspaceId.equals(currentUser.getWorkspace().getId())) {
             throw new AccessDeniedException("You do not have access to this workspace");
         }
+    }
+
+    private void requireManagerInWorkspace(User currentUser, UUID workspaceId) {
+        if (currentUser.getRole() != Role.OWNER && currentUser.getRole() != Role.ADMIN) {
+            throw new AccessDeniedException("Only a workspace owner or admin can view the team");
+        }
+        if (workspaceId == null || currentUser.getWorkspace() == null || !workspaceId.equals(currentUser.getWorkspace().getId())) {
+            throw new AccessDeniedException("You do not have access to this workspace");
+        }
+    }
+
+    private static String normalizeEmail(String email) {
+        if (email == null || !email.trim().matches("^[^\\s@]{1,64}@[^\\s@]{1,190}\\.[^\\s@]{2,}$")) {
+            throw new IllegalArgumentException("A valid email address is required");
+        }
+        return email.trim().toLowerCase();
     }
 
     private void requireSameWorkspace(User currentUser, User targetUser) {
@@ -266,19 +314,6 @@ public class UserService implements UserDetailsService {
                 "Password changed successfully",
                 null
         );
-    }
-
-    @Transactional
-    public ApiResponse<UserDto> updateOwnProfile(UUID userId, UpdateUserRequest request) {
-        User user = userRepository.findUserById(userId);
-        if (user == null) throw new UserNotFoundException("user not found");
-
-        user.setFullName(request.getFullName());
-        user.setEmail(request.getEmail());
-        // deliberately do NOT allow role/workspace changes through this endpoint
-
-        var saved = userRepository.save(user);
-        return ApiResponse.success("profile updated", userMapper.toUserDto(saved));
     }
 
 }

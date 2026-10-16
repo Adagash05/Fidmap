@@ -1,5 +1,6 @@
 package com.amsal.fidmap.surveyFile.surveyQuestion;
 
+import java.util.List;
 
 public record UpdateQuestionRequest (
 
@@ -7,6 +8,11 @@ public record UpdateQuestionRequest (
 
      QuestionType type,
 
-     Integer position
+     Integer position,
+
+     /** When non-null, replaces the question's options (draft surveys only). */
+     List<String> options,
+
+     Boolean required
 ) {
 }
