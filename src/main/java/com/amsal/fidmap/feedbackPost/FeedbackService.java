@@ -139,12 +139,12 @@ public class FeedbackService implements IFeedbackService {
             default -> Sort.by(Sort.Order.desc("createdAt"), Sort.Order.asc("id"));
         };
 
-        var result = feedbackPostRepository.search(
-                boardId,
-                status,
-                Paging.likeContains(query),
-                Paging.of(page, size, order)
-        );
+        String pattern = Paging.likeContains(query);
+        var pageable = Paging.of(page, size, order);
+
+        var result = status == null
+                ? feedbackPostRepository.search(boardId, pattern, pageable)
+                : feedbackPostRepository.searchByStatus(boardId, status, pattern, pageable);
 
         return ApiResponse.success(
                 "retrieved feedback page",

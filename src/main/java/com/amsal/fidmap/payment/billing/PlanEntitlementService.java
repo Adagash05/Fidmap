@@ -265,6 +265,34 @@ public class PlanEntitlementService {
         }
     }
 
+    /**
+     * Surveys per workspace. Counts ALL existing surveys (draft, published and
+     * closed). A workspace that is above the limit after a downgrade keeps its
+     * surveys; it simply cannot create more until it is within the limit.
+     */
+    public void checkSurveyLimit(
+            UUID workspaceId,
+            long currentSurveyCount
+    ) {
+        requireActiveAccess(workspaceId);
+
+
+        Plan plan = getPlan(workspaceId);
+
+        Integer limit = plan.getMaxSurveys();
+
+        if (limit != null && currentSurveyCount >= limit) {
+
+            throw new PlanLimitExceededException(
+                    "Survey limit reached. Your "
+                            + plan.getBillingPlan().getDisplayName()
+                            + " plan allows "
+                            + limit
+                            + (limit == 1 ? " survey." : " surveys.")
+            );
+        }
+    }
+
     public void checkEndUserLimit(
             UUID workspaceId,
             long currentEndUserCount

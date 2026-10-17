@@ -62,6 +62,11 @@ public class RoadmapItemService implements IRoadmapItemService {
         item.setTitle(item.getTitle().trim());
         item.setDescription(item.getDescription() == null ? null : item.getDescription().trim());
 
+        // A status is always set (the board groups items by status; the create form defaults to Planned).
+        if (item.getStatus() == null) {
+            item.setStatus(RoadMapStatus.PLANNED);
+        }
+
         roadmap.addRoadmapItem(item);
 
         RoadmapItem saved = roadmapItemRepository.saveAndFlush(item);

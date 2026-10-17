@@ -13,6 +13,9 @@ public class ApiResponse<T> {
 
     private T data;
 
+    /** Machine-readable reason for failures that clients must tell apart from a server error (e.g. PLAN_LIMIT). Null on success. */
+    private String errorCode;
+
     public ApiResponse(String message, T data) {
         this.success = true;
         this.message = message;
@@ -33,6 +36,12 @@ public class ApiResponse<T> {
 
     public static <T> ApiResponse<T> error(String message) {
         return new ApiResponse<>(false, message, null);
+    }
+
+    public static <T> ApiResponse<T> error(String message, String errorCode) {
+        ApiResponse<T> response = new ApiResponse<>(false, message, null);
+        response.setErrorCode(errorCode);
+        return response;
     }
 
 }

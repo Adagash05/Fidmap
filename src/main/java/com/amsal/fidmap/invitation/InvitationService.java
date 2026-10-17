@@ -55,7 +55,8 @@ public class InvitationService {
     public record AcceptRequest(String token, String fullName, String password) {}
 
     public record InvitationView(UUID id, String email, Role role, InvitationStatus status,
-                                 Instant createdAt, Instant expiresAt, boolean expired, boolean emailSent) {}
+                                 Instant createdAt, Instant expiresAt, boolean expired, boolean emailSent,
+                                 String emailError) {}
 
     public record Preview(String workspaceName, String email, Role role) {}
 
@@ -266,7 +267,7 @@ public class InvitationService {
     private static InvitationView view(TeamInvitation i, boolean emailSent) {
         return new InvitationView(i.getId(), i.getEmail(), i.getRole(), i.getStatus(), i.getCreatedAt(),
                 i.getExpiresAt(), i.getStatus() == InvitationStatus.PENDING && i.getExpiresAt().isBefore(Instant.now()),
-                emailSent);
+                emailSent, emailSent ? null : i.getLastEmailError());
     }
 
     private static String normalizeEmail(String email) {

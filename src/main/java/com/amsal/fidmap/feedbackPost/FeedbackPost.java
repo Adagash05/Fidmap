@@ -44,27 +44,32 @@ public class FeedbackPost {
 
     private Long voteCount = 0L;
 
-    //additional
-    @Column(nullable = false)
-    private int impactScore = 0;
+    // Optional business-impact inputs (not used by the scoring engine).
+    // Boxed + nullable + DB default so that (a) `ddl-auto: update` can add the
+    // columns to a table that already has rows (a NOT NULL column without a
+    // default cannot be added to a populated table; the column then never
+    // exists and EVERY feedback_post query fails with HTTP 500) and (b) rows
+    // that hold NULL still hydrate instead of throwing on a primitive.
+    @Column(columnDefinition = "integer default 0")
+    private Integer impactScore = 0;
 
-    @Column(nullable = false)
-    private int payingCustomerCount = 0;
+    @Column(columnDefinition = "integer default 0")
+    private Integer payingCustomerCount = 0;
 
-    @Column(nullable = false, precision = 15, scale = 2)
+    @Column(precision = 15, scale = 2, columnDefinition = "numeric(15,2) default 0")
     private BigDecimal affectedMrr = BigDecimal.ZERO;
 
-    @Column(nullable = false)
-    private int salesOpportunityCount = 0;
+    @Column(columnDefinition = "integer default 0")
+    private Integer salesOpportunityCount = 0;
 
-    @Column(nullable = false)
-    private int churnRiskCount = 0;
+    @Column(columnDefinition = "integer default 0")
+    private Integer churnRiskCount = 0;
 
-    @Column(nullable = false)
-    private int estimatedEffort = 3; // 1 = very easy, 5 = very hard
+    @Column(columnDefinition = "integer default 3")
+    private Integer estimatedEffort = 3; // 1 = very easy, 5 = very hard
 
-    @Column(nullable = false)
-    private int demandGrowth = 0;
+    @Column(columnDefinition = "integer default 0")
+    private Integer demandGrowth = 0;
 
 
     //not null

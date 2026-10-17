@@ -144,3 +144,34 @@ All changes are additive. To roll back the application, deploy the previous buil
 
 ## 6. Not verified
 Not run against Postgres. Column types for enums and timestamps follow Hibernate defaults and may differ slightly from what your existing schema reports (for example `timestamp(6)`). Compare with `ddl-auto: validate` in a staging copy before relying on this file.
+
+## 7. Production-stabilization changes (survey limits, feedback_post columns)
+Apply by hand before deploy if you do not want to rely on `ddl-auto: update`. All statements are idempotent. Back up first; none of this was executed here.
+```sql
+-- 7a. feedback_post: seven business-impact columns that no code reads.
+-- A NOT NULL column without a default cannot be added to a populated table, so on a database that
+-- already had rows Hibernate could not create them and every query that selects feedback_post
+-- (feedback lists, and the roadmap through each item's linked requests) failed with HTTP 500.
+ALTER TABLE feedback_post ADD COLUMN IF NOT EXISTS impact_score integer DEFAULT 0;
+ALTER TABLE feedback_post ADD COLUMN IF NOT EXISTS paying_customer_count integer DEFAULT 0;
+ALTER TABLE feedback_post ADD COLUMN IF NOT EXISTS affected_mrr numeric(15,2) DEFAULT 0;
+ALTER TABLE feedback_post ADD COLUMN IF NOT EXISTS sales_opportunity_count integer DEFAULT 0;
+ALTER TABLE feedback_post ADD COLUMN IF NOT EXISTS churn_risk_count integer DEFAULT 0;
+ALTER TABLE feedback_post ADD COLUMN IF NOT EXISTS estimated_effort integer DEFAULT 3;
+ALTER TABLE feedback_post ADD COLUMN IF NOT EXISTS demand_growth integer DEFAULT 0;
+-- If the columns already exist as NOT NULL, relax them (the entity now tolerates NULL):
+ALTER TABLE feedback_post ALTER COLUMN impact_score DROP NOT NULL;
+ALTER TABLE feedback_post ALTER COLUMN paying_customer_count DROP NOT NULL;
+ALTER TABLE feedback_post ALTER COLUMN affected_mrr DROP NOT NULL;
+ALTER TABLE feedback_post ALTER COLUMN sales_opportunity_count DROP NOT NULL;
+ALTER TABLE feedback_post ALTER COLUMN churn_risk_count DROP NOT NULL;
+ALTER TABLE feedback_post ALTER COLUMN estimated_effort DROP NOT NULL;
+ALTER TABLE feedback_post ALTER COLUMN demand_growth DROP NOT NULL;
+
+-- 7b. Survey limits. NULL means unlimited, so existing rows MUST be backfilled.
+-- (PlanDataInitializer also does this on every start.)
+ALTER TABLE plans ADD COLUMN IF NOT EXISTS max_surveys integer;
+UPDATE plans SET max_surveys = 1  WHERE billing_plan IN ('STARTUP_MONTHLY','STARTUP_YEARLY');
+UPDATE plans SET max_surveys = 10 WHERE billing_plan IN ('BUSINESS_MONTHLY','BUSINESS_YEARLY','LIFETIME');
+```
+Lifetime follows the Business entitlements everywhere else in `PlanDataInitializer`, so its survey limit is 10. Downgrades never delete surveys: the workspace keeps them and cannot create more until it is within the limit.

@@ -21,6 +21,7 @@ public class PlanDataInitializer implements CommandLineRunner {
                 5_000,
                 100,
                 100,
+                1,
                 false,
                 false
         );
@@ -33,6 +34,7 @@ public class PlanDataInitializer implements CommandLineRunner {
                 5_000,
                 100,
                 100,
+                1,
                 false,
                 false
         );
@@ -45,6 +47,7 @@ public class PlanDataInitializer implements CommandLineRunner {
                 25_000,
                 null,
                 null,
+                10,
                 true,
                 true
         );
@@ -57,6 +60,7 @@ public class PlanDataInitializer implements CommandLineRunner {
                 25_000,
                 null,
                 null,
+                10,
                 true,
                 true
         );
@@ -69,6 +73,7 @@ public class PlanDataInitializer implements CommandLineRunner {
                 25_000,
                 null,
                 null,
+                10,
                 true,
                 true
         );
@@ -82,11 +87,22 @@ public class PlanDataInitializer implements CommandLineRunner {
             Integer maxEndUsers,
             Integer maxRoadmapItems,
             Integer maxChangelogEntries,
+            Integer maxSurveys,
             boolean removeFidmapBranding,
             boolean privateBoards
     ) {
 
-        if (planRepository.findByBillingPlan(billingPlan).isPresent()) {
+        Plan existing = planRepository.findByBillingPlan(billingPlan).orElse(null);
+
+        if (existing != null) {
+            // Plans created before surveys were limited have max_surveys = NULL,
+            // which means "unlimited". The survey limit is defined here, so bring
+            // existing rows in line. Only this field is synchronised; limits an
+            // operator edited by hand are left alone.
+            if (!java.util.Objects.equals(existing.getMaxSurveys(), maxSurveys)) {
+                existing.setMaxSurveys(maxSurveys);
+                planRepository.save(existing);
+            }
             return;
         }
 
@@ -98,6 +114,7 @@ public class PlanDataInitializer implements CommandLineRunner {
                 .maxEndUsers(maxEndUsers)
                 .maxRoadmapItems(maxRoadmapItems)
                 .maxChangelogEntries(maxChangelogEntries)
+                .maxSurveys(maxSurveys)
                 .customBranding(true)
                 .removeFidmapBranding(removeFidmapBranding)
                 .privateBoards(privateBoards)

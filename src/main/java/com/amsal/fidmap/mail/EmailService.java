@@ -4,7 +4,9 @@ import com.resend.Resend;
 import com.resend.core.exception.ResendException;
 import com.resend.services.emails.model.CreateEmailOptions;
 import com.resend.services.emails.model.CreateEmailResponse;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -13,14 +15,46 @@ import org.springframework.stereotype.Service;
  * place and callers receive the PROVIDER message id (proof the provider
  * accepted the message) rather than assuming delivery.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class EmailService {
 
+    /**
+     * Resend's shared test sender. It can ONLY deliver to the email address of the
+     * Resend account owner; every other recipient is rejected by the provider.
+     * Production must set RESEND_FROM to an address on a verified domain.
+     */
+    public static final String TEST_SENDER = "FIDMAP <onboarding@resend.dev>";
+
     private final Resend resend;
 
-    @Value("${resend.from:FIDMAP <onboarding@resend.dev>}")
-    private String from;
+    /** Empty when RESEND_FROM is unset OR set to an empty string (Spring only applies a default when the key is absent). */
+    @Value("${resend.from:}")
+    private String configuredFrom;
+
+    private String from = TEST_SENDER;
+
+    @PostConstruct
+    void resolveSender() {
+
+        from = resolveFrom(configuredFrom);
+
+        if (TEST_SENDER.equals(from)) {
+            log.warn("RESEND_FROM is not set: emails use Resend's test sender, which only delivers to the Resend "
+                    + "account owner. Team invitations, password resets and request updates to anyone else will be "
+                    + "rejected by the provider. Set RESEND_FROM to an address on a verified domain.");
+        }
+    }
+
+    static String resolveFrom(String configured) {
+        return configured == null || configured.isBlank() ? TEST_SENDER : configured.trim();
+    }
+
+    /** The sender every transactional email must use (shared with password reset). */
+    public String sender() {
+        return from;
+    }
 
     /**
      * @return provider message id (never null on success)

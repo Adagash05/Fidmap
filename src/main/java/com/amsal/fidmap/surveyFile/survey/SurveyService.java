@@ -5,6 +5,7 @@ import com.amsal.fidmap.exception.SurveyNotFoundException;
 import com.amsal.fidmap.exception.WorkspaceNotFoundException;
 import com.amsal.fidmap.feedbackPost.FeedbackPost;
 import com.amsal.fidmap.feedbackPost.FeedbackPostRepository;
+import com.amsal.fidmap.payment.billing.PlanEntitlementService;
 import com.amsal.fidmap.security.WorkspaceAuthorizationService;
 import com.amsal.fidmap.surveyFile.surveyOption.SurveyOption;
 import com.amsal.fidmap.surveyFile.surveyQuestion.CreateQuestionRequest;
@@ -33,6 +34,7 @@ public class SurveyService implements ISurveyService {
     private final SurveyResponseRepository responseRepository;
     private final FeedbackPostRepository feedbackPostRepository;
     private final WorkspaceAuthorizationService workspaceAuthorizationService;
+    private final PlanEntitlementService planEntitlementService;
 
     @PersistenceContext
     private EntityManager em;
@@ -47,6 +49,9 @@ public class SurveyService implements ISurveyService {
         if (workspace == null) {
             throw new WorkspaceNotFoundException("workspace not found");
         }
+
+        // Plan check: the backend is the authority for the survey limit.
+        planEntitlementService.checkSurveyLimit(workspaceId, surveyRepository.countByWorkspaceId(workspaceId));
 
         int questionCount = request.questions() == null ? 0 : request.questions().size();
 

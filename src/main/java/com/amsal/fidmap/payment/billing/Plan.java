@@ -38,6 +38,10 @@ public class Plan {
     @Column(name = "max_changelog_entries")
     private Integer maxChangelogEntries;
 
+    /** Surveys a workspace may own. Null = unlimited. Existing surveys are never deleted on downgrade. */
+    @Column(name = "max_surveys")
+    private Integer maxSurveys;
+
     @Column(name = "custom_branding")
     private boolean customBranding;
 

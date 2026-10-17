@@ -26,6 +26,8 @@ public record PlanEntitlementResponse(
 
         Integer maxChangelogEntries,
 
+        Integer maxSurveys,
+
         boolean customBranding,
 
         boolean removeFidmapBranding,

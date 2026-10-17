@@ -188,9 +188,10 @@ public class GlobalExceptionHandler {
 
         System.err.println(ex.getMessage());
 
+        // 403 + PLAN_LIMIT: an expected business condition the client must tell apart from a failure.
         return ResponseEntity
-                .status(HttpStatus.BAD_REQUEST)
-                .body(ApiResponse.error(ex.getMessage()));
+                .status(HttpStatus.FORBIDDEN)
+                .body(ApiResponse.error(ex.getMessage(), "PLAN_LIMIT"));
     }
 
     @ExceptionHandler(FeatureNotAvailableException.class)
@@ -225,7 +226,7 @@ public class GlobalExceptionHandler {
 
         return ResponseEntity
                 .status(HttpStatus.PAYMENT_REQUIRED)
-                .body(ApiResponse.error(ex.getMessage()));
+                .body(ApiResponse.error(ex.getMessage(), "SUBSCRIPTION_" + ex.getReasonCode()));
     }
 
     @ExceptionHandler(IllegalStateException.class)

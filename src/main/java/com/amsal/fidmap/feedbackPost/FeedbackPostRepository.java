@@ -32,14 +32,32 @@ public interface FeedbackPostRepository extends JpaRepository<FeedbackPost, UUID
 
     List<FeedbackPost> findByWorkspaceId(UUID workspaceId);
 
+    /*
+     * Two explicit queries instead of one with "(:status IS NULL OR f.status = :status)":
+     * a NULL enum parameter used inside IS NULL cannot be typed by PostgreSQL
+     * ("could not determine data type of parameter") and fails with HTTP 500
+     * whenever no status filter is chosen, which is the default.
+     */
     @Query("""
             SELECT f FROM FeedbackPost f
             WHERE f.board.id = :boardId
               AND f.mergedInto IS NULL
-              AND (:status IS NULL OR f.status = :status)
               AND LOWER(f.title) LIKE :pattern ESCAPE '\\'
             """)
     Page<FeedbackPost> search(
+            @Param("boardId") UUID boardId,
+            @Param("pattern") String pattern,
+            Pageable pageable
+    );
+
+    @Query("""
+            SELECT f FROM FeedbackPost f
+            WHERE f.board.id = :boardId
+              AND f.mergedInto IS NULL
+              AND f.status = :status
+              AND LOWER(f.title) LIKE :pattern ESCAPE '\\'
+            """)
+    Page<FeedbackPost> searchByStatus(
             @Param("boardId") UUID boardId,
             @Param("status") FeedbackStatus status,
             @Param("pattern") String pattern,

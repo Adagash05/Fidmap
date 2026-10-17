@@ -14,6 +14,8 @@ public class PasswordResetEmailServiceImpl
 
     private final Resend resend;
 
+    private final com.amsal.fidmap.mail.EmailService emailService;
+
     @Value("${fidmap.frontend-url}")
     private String frontendUrl;
 
@@ -83,7 +85,7 @@ public class PasswordResetEmailServiceImpl
         );
 
         CreateEmailOptions params = CreateEmailOptions.builder()
-                .from("FIDMAP <onboarding@resend.dev>")
+                .from(emailService.sender())
                 .to(email)
                 .subject("Reset your FIDMAP password")
                 .html(html)

@@ -547,6 +547,9 @@ public class BillingService {
                 .maxChangelogEntries(
                         plan.getMaxChangelogEntries()
                 )
+                .maxSurveys(
+                        plan.getMaxSurveys()
+                )
                 .customBranding(
                         plan.isCustomBranding()
                 )
